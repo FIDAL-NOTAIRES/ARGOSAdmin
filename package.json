@@ -1,0 +1,9 @@
+{
+  "name": "argosadmin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ARGOSAdmin — administration isolée du portail patrimoine ARGOS (FIDAL Notaires)",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
+  }
+}

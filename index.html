@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ARGOSAdmin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230F2238'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%236DD5DC' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23FF982D'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --nuit:#0F2238; --canard:#33838B; --orange:#FF982D; --carmin:#A01040;
+    --cyan:#6DD5DC; --jaune-txt:#FFC900;
+    --fond:#F6F7F9; --papier:#FFFFFF; --trait:#D9DEE5; --texte:#1B2733; --gris:#65717E;
+    --vert:#2E8B57;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--fond);color:var(--texte);
+    font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;font-size:15px;line-height:1.45}
+  h1,h2,h3{font-family:Georgia,"Times New Roman",serif;font-weight:normal;margin:0}
+  a{color:var(--canard)}
+  button{font:inherit;cursor:pointer}
+  input,select{font:inherit}
+
+  /* ---- bandeau ---- */
+  header{background:var(--nuit);color:#fff;padding:0 24px;height:60px;display:flex;align-items:center;gap:18px}
+  header h1{font-size:22px;letter-spacing:.3px;color:#fff}
+  header h1 span{color:var(--cyan)}
+  header .fil{color:#C7D0DB;font-size:14px}
+  header .fil a{color:#fff;text-decoration:none;border-bottom:1px solid var(--cyan)}
+  header .droite{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:13px;color:#C7D0DB}
+  header .droite button{background:transparent;color:#fff;border:1px solid #4A5D73;border-radius:6px;padding:5px 10px}
+  header .droite button:hover{border-color:var(--cyan)}
+
+  /* ---- bande rouge d'alerte (lot 4 l'alimentera) ---- */
+  .bande{display:none;background:var(--carmin);color:#fff;padding:10px 24px;font-size:14px}
+  .bande.visible{display:block}
+
+  main{max-width:1100px;margin:0 auto;padding:28px 24px 60px}
+  .vue{display:none}
+  .vue.active{display:block}
+
+  /* ---- connexion ---- */
+  .carte-connexion{max-width:380px;margin:80px auto 0;background:var(--papier);border:1px solid var(--trait);
+    border-radius:10px;padding:28px}
+  .carte-connexion h2{font-size:24px;margin-bottom:6px}
+  .carte-connexion p{color:var(--gris);margin:0 0 18px}
+
+  /* ---- formulaires ---- */
+  label{display:block;font-size:13px;color:var(--gris);margin:12px 0 4px}
+  input[type=text],input[type=password],input[type=number],input[type=url]{
+    width:100%;padding:9px 11px;border:1px solid var(--trait);border-radius:7px;background:#fff}
+  input:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--canard)}
+  .ligne{display:grid;gap:12px}
+  .ligne.deux{grid-template-columns:1fr 1fr}
+  .ligne.quatre{grid-template-columns:2fr 3fr 1fr 2fr}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap}
+  .btn{border:1px solid var(--canard);background:var(--canard);color:#fff;border-radius:7px;padding:8px 14px}
+  .btn:hover{background:#2B6F76}
+  .btn.second{background:#fff;color:var(--canard)}
+  .btn.second:hover{background:#EEF6F7}
+  .btn.danger{border-color:var(--carmin);background:#fff;color:var(--carmin)}
+  .btn.danger:hover{background:#FBEDF1}
+  .btn.orange{border-color:var(--orange);background:var(--orange);color:var(--nuit)}
+  .btn.orange:hover{background:#F58A1A}
+  .btn[disabled]{opacity:.55;cursor:default}
+  .erreur{color:var(--carmin);font-size:14px;margin-top:10px;min-height:18px}
+  .info{color:var(--gris);font-size:13px}
+
+  /* ---- en-tête de page ---- */
+  .entete{display:flex;align-items:baseline;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+  .entete h2{font-size:28px}
+  .entete .droite{margin-left:auto;display:flex;gap:10px}
+
+  /* ---- voyant ---- */
+  .voyant{display:inline-block;width:12px;height:12px;border-radius:50%;background:#B9C2CC;vertical-align:middle;
+    box-shadow:0 0 0 2px #fff inset}
+  .voyant.vert{background:var(--vert)}
+  .voyant.rouge{background:var(--carmin)}
+  .voyant.gris{background:#B9C2CC}
+  .voyant.grand{width:16px;height:16px}
+
+  /* ---- tableaux ---- */
+  .bloc{background:var(--papier);border:1px solid var(--trait);border-radius:10px;padding:0;margin-bottom:22px;overflow:hidden}
+  .bloc .titre{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--trait)}
+  .bloc .titre h3{font-size:19px}
+  .bloc .titre .droite{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .bloc .corps{padding:16px 18px}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-weight:600;font-size:13px;color:var(--gris);padding:10px 18px;border-bottom:1px solid var(--trait)}
+  td{padding:11px 18px;border-bottom:1px solid #EEF1F4;vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  tr.cliquable{cursor:pointer}
+  tr.cliquable:hover td{background:#F2F8F9}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .vide{padding:26px 18px;color:var(--gris);text-align:center}
+  .etat{display:inline-block;font-size:12px;padding:2px 8px;border-radius:12px;border:1px solid var(--trait);color:var(--gris)}
+  .etat.actif{color:var(--vert);border-color:#BFE3CF}
+  .etat.suspendu{color:var(--carmin);border-color:#F0C3D0;background:#FBEDF1}
+  .etat.ok{color:var(--vert)}
+  .etat.echec,.etat.bloque{color:var(--carmin)}
+  .petit{font-size:13px;color:var(--gris)}
+  code{font-family:Consolas,"Courier New",monospace;font-size:13px;background:#F1F3F6;padding:2px 6px;border-radius:4px;word-break:break-all}
+  .formulaire-inline{background:#F6FBFB;border-top:1px solid var(--trait);padding:14px 18px;display:none}
+  .formulaire-inline.visible{display:block}
+  .message{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--nuit);color:#fff;
+    padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .message.visible{opacity:1}
+  @media (max-width:760px){
+    header{padding:0 14px}
+    main{padding:18px 12px 40px}
+    .ligne.deux,.ligne.quatre{grid-template-columns:1fr}
+    th,td{padding:9px 10px}
+    .masque-mobile{display:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ARGOS<span>Admin</span></h1>
+  <div class="fil" id="fil"></div>
+  <div class="droite" id="entete-droite" style="display:none">
+    <span id="horloge-session"></span>
+    <button type="button" onclick="deconnecter()">Se déconnecter</button>
+  </div>
+</header>
+<div class="bande" id="bande"></div>
+
+<main>
+
+  <!-- ===================== CONNEXION ===================== -->
+  <section class="vue" id="vue-connexion">
+    <div class="carte-connexion">
+      <h2>Administration</h2>
+      <p>Accès réservé au cabinet. Mot de passe administrateur.</p>
+      <label for="mdp">Mot de passe</label>
+      <input type="password" id="mdp" autocomplete="current-password" onkeydown="if(event.key==='Enter')connecter()">
+      <div class="erreur" id="erreur-connexion"></div>
+      <div class="actions">
+        <button class="btn" type="button" id="btn-connexion" onclick="connecter()">Ouvrir</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== LISTE DES CLIENTS ===================== -->
+  <section class="vue" id="vue-clients">
+    <div class="entete">
+      <h2>Clients</h2>
+      <span class="info" id="info-sondage"></span>
+      <div class="droite">
+        <button class="btn second" type="button" onclick="chargerClients(true)">Rafraîchir</button>
+        <button class="btn" type="button" onclick="basculer('form-nouveau-client')">Créer un client</button>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <div class="formulaire-inline" id="form-nouveau-client">
+        <div class="ligne deux">
+          <div>
+            <label for="nc-nom">Nom du client</label>
+            <input type="text" id="nc-nom" placeholder="Logis Métropole">
+          </div>
+          <div>
+            <label for="nc-url">Adresse du site client (facultatif, pour le voyant)</label>
+            <input type="url" id="nc-url" placeholder="https://…vercel.app">
+          </div>
+        </div>
+        <div class="erreur" id="erreur-nouveau-client"></div>
+        <div class="actions">
+          <button class="btn" type="button" onclick="creerClient()">Créer le client</button>
+          <button class="btn second" type="button" onclick="basculer('form-nouveau-client',false)">Annuler</button>
+        </div>
+      </div>
+      <table id="table-clients">
+        <thead>
+          <tr>
+            <th style="width:36px"></th>
+            <th>Client</th>
+            <th class="num">Sites</th>
+            <th class="masque-mobile">Dernier dépôt</th>
+            <th>État</th>
+          </tr>
+        </thead>
+        <tbody id="corps-clients"></tbody>
+      </table>
+      <div class="vide" id="vide-clients" style="display:none">Aucun client pour l'instant. Créez le premier avec le bouton ci-dessus.</div>
+    </div>
+  </section>
+
+  <!-- ===================== FICHE CLIENT ===================== -->
+  <section class="vue" id="vue-client">
+    <div class="entete">
+      <span class="voyant grand" id="fc-voyant"></span>
+      <h2 id="fc-nom"></h2>
+      <span class="etat" id="fc-etat"></span>
+      <div class="droite">
+        <button class="btn second" type="button" onclick="basculer('form-modifier-client')">Modifier</button>
+        <button class="btn danger" type="button" id="fc-btn-suspendre" onclick="suspendreClient()"></button>
+      </div>
+    </div>
+    <p class="petit" id="fc-sondage"></p>
+
+    <div class="bloc">
+      <div class="formulaire-inline" id="form-modifier-client">
+        <div class="ligne deux">
+          <div>
+            <label for="mc-nom">Nom du client</label>
+            <input type="text" id="mc-nom">
+          </div>
+          <div>
+            <label for="mc-url">Adresse du site client</label>
+            <input type="url" id="mc-url" placeholder="https://…vercel.app">
+          </div>
+          <div>
+            <label for="mc-seuil-jour">Plafond de téléchargements par jour et par utilisateur</label>
+            <input type="number" id="mc-seuil-jour" min="1">
+          </div>
+          <div>
+            <label for="mc-seuil-vitesse">Seuil de vitesse (pièces en moins de 5 minutes)</label>
+            <input type="number" id="mc-seuil-vitesse" min="1">
+          </div>
+        </div>
+        <label>Clé de lecture donnée au site client</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <code id="mc-cle">••••••••••••••••••••</code>
+          <button class="btn second" type="button" onclick="afficherCle()">Afficher</button>
+          <button class="btn second" type="button" onclick="copierCle()">Copier</button>
+          <button class="btn danger" type="button" onclick="regenererCle()">Régénérer</button>
+        </div>
+        <p class="info">Régénérer la clé coupe le site client jusqu'à ce que la nouvelle clé y soit reportée (variable d'environnement du site client, lot 2).</p>
+        <div class="erreur" id="erreur-modifier-client"></div>
+        <div class="actions">
+          <button class="btn" type="button" onclick="enregistrerClient()">Enregistrer</button>
+          <button class="btn second" type="button" onclick="basculer('form-modifier-client',false)">Fermer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sites -->
+    <div class="bloc">
+      <div class="titre">
+        <h3>Sites</h3>
+        <span class="petit" id="fc-nb-sites"></span>
+        <div class="droite">
+          <button class="btn" type="button" onclick="basculer('form-nouveau-site')">Ajouter un site</button>
+        </div>
+      </div>
+      <div class="formulaire-inline" id="form-nouveau-site">
+        <p class="info" style="margin:0 0 4px">Le dossier est créé d'abord ; la fiche se pré-remplira au dépôt de la note de désignation ou du titre (lot 2). Vous pouvez aussi saisir les références dès maintenant.</p>
+        <div class="ligne quatre">
+          <div><label for="ns-nom">Nom du site</label><input type="text" id="ns-nom" placeholder="Entrepôt nord"></div>
+          <div><label for="ns-adresse">Adresse</label><input type="text" id="ns-adresse"></div>
+          <div><label for="ns-cp">Code postal</label><input type="text" id="ns-cp"></div>
+          <div><label for="ns-commune">Commune</label><input type="text" id="ns-commune"></div>
+        </div>
+        <div class="erreur" id="erreur-nouveau-site"></div>
+        <div class="actions">
+          <button class="btn" type="button" onclick="creerSite()">Créer le site</button>
+          <button class="btn second" type="button" onclick="basculer('form-nouveau-site',false)">Annuler</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Site</th><th class="masque-mobile">Adresse</th><th class="num">Pièces</th><th class="masque-mobile">Dernier dépôt</th><th style="width:60px"></th></tr></thead>
+        <tbody id="corps-sites"></tbody>
+      </table>
+      <div class="vide" id="vide-sites" style="display:none">Aucun site. Ajoutez le premier actif de ce client.</div>
+    </div>
+
+    <!-- Utilisateurs -->
+    <div class="bloc">
+      <div class="titre">
+        <h3>Utilisateurs et droits</h3>
+        <span class="petit" id="fc-nb-utilisateurs"></span>
+        <div class="droite"><span class="info">Création et activation au lot 3</span></div>
+      </div>
+      <table>
+        <thead><tr><th>Courriel</th><th class="masque-mobile">Nom</th><th>Droit</th><th>État</th></tr></thead>
+        <tbody id="corps-utilisateurs"></tbody>
+      </table>
+      <div class="vide" id="vide-utilisateurs" style="display:none">Aucun utilisateur. L'équipe du client sera créée ici au lot 3.</div>
+    </div>
+
+    <!-- Journal -->
+    <div class="bloc">
+      <div class="titre">
+        <h3>Journal des connexions</h3>
+        <span class="petit">100 dernières</span>
+      </div>
+      <table>
+        <thead><tr><th>Date et heure</th><th>Personne</th><th class="masque-mobile">Appareil</th><th>Résultat</th><th class="num">Téléchargements</th></tr></thead>
+        <tbody id="corps-connexions"></tbody>
+      </table>
+      <div class="vide" id="vide-connexions" style="display:none">Aucune connexion enregistrée.</div>
+    </div>
+
+    <p><a href="#" onclick="allerClients();return false">← Retour à la liste des clients</a></p>
+  </section>
+
+</main>
+
+<div class="message" id="message"></div>
+
+<script>
+// ============================================================
+// ARGOSAdmin — lot 1 — page unique
+// Vues : connexion → liste des clients → fiche client
+// La session est un jeton signé, gardé dans sessionStorage (8 h).
+// ============================================================
+const CLE_SESSION = "argosadmin_jeton";
+let clientCourant = null;   // données de la fiche ouverte
+let cleVisible = false;
+
+// ---------- utilitaires ----------
+function $(id){ return document.getElementById(id); }
+function html(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function dateFr(v){
+  if(!v) return "—";
+  const d = new Date(v);
+  if(isNaN(d)) return "—";
+  return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"}) + " " +
+         d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+}
+function dateCourte(v){
+  if(!v) return "—";
+  const d = new Date(v);
+  return isNaN(d) ? "—" : d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});
+}
+function message(txt){
+  const m = $("message"); m.textContent = txt; m.classList.add("visible");
+  clearTimeout(message._t); message._t = setTimeout(()=>m.classList.remove("visible"), 2600);
+}
+function basculer(id, force){
+  const el = $(id);
+  const ouvrir = (force === undefined) ? !el.classList.contains("visible") : !!force;
+  el.classList.toggle("visible", ouvrir);
+  if(ouvrir){ const premier = el.querySelector("input"); if(premier) premier.focus(); }
+}
+function montrerVue(nom){
+  document.querySelectorAll(".vue").forEach(v => v.classList.remove("active"));
+  $("vue-" + nom).classList.add("active");
+  window.scrollTo(0,0);
+}
+function voyantClasse(c){
+  if(!c) return "gris";
+  const ok = c.dernier_ok ? new Date(c.dernier_ok).getTime() : 0;
+  const ko = c.dernier_echec ? new Date(c.dernier_echec).getTime() : 0;
+  if(!ok && !ko) return "gris";
+  return ok >= ko ? "vert" : "rouge";
+}
+function voyantTexte(c){
+  const cl = voyantClasse(c);
+  if(cl === "gris") return c && c.url_site ? "Site client pas encore sondé." : "Adresse du site client non renseignée : voyant inactif.";
+  if(cl === "vert") return "Site client joignable (vérifié le " + dateFr(c.dernier_ok) + ").";
+  return "Site client injoignable depuis le " + dateFr(c.dernier_echec) + (c.sondage_message ? " — " + c.sondage_message : "") + ".";
+}
+
+// ---------- appels serveur ----------
+async function api(action, params){
+  const jeton = sessionStorage.getItem(CLE_SESSION) || "";
+  const rep = await fetch("/api/admin", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization": jeton ? "Bearer " + jeton : "" },
+    body: JSON.stringify(Object.assign({ action }, params || {}))
+  });
+  let donnees = {};
+  try { donnees = await rep.json(); } catch { donnees = { erreur: "Réponse illisible du serveur" }; }
+  if(rep.status === 401 && action !== "connexion"){ deconnecter(true); throw new Error(donnees.erreur || "Session expirée"); }
+  if(!rep.ok) throw new Error(donnees.erreur || ("Erreur " + rep.status));
+  return donnees;
+}
+
+// ---------- session ----------
+function sessionOuverte(){
+  const j = sessionStorage.getItem(CLE_SESSION);
+  if(!j) return false;
+  const exp = Number(j.split(".")[0]);
+  return Number.isFinite(exp) && exp > Date.now();
+}
+function majHorloge(){
+  const j = sessionStorage.getItem(CLE_SESSION); if(!j) return;
+  const exp = Number(j.split(".")[0]);
+  const reste = Math.max(0, exp - Date.now());
+  const h = Math.floor(reste/3600000), mn = Math.floor((reste%3600000)/60000);
+  $("horloge-session").textContent = "Session : " + (h ? h + " h " : "") + mn + " min";
+}
+async function connecter(){
+  const mdp = $("mdp").value;
+  $("erreur-connexion").textContent = "";
+  if(!mdp){ $("erreur-connexion").textContent = "Saisissez le mot de passe."; return; }
+  $("btn-connexion").disabled = true;
+  try{
+    const r = await api("connexion", { mdp });
+    sessionStorage.setItem(CLE_SESSION, r.jeton);
+    $("mdp").value = "";
+    demarrer();
+  }catch(e){
+    $("erreur-connexion").textContent = e.message;
+  }finally{
+    $("btn-connexion").disabled = false;
+  }
+}
+function deconnecter(silencieux){
+  sessionStorage.removeItem(CLE_SESSION);
+  clientCourant = null;
+  $("entete-droite").style.display = "none";
+  $("fil").textContent = "";
+  $("bande").classList.remove("visible");
+  montrerVue("connexion");
+  if(!silencieux) message("Déconnecté.");
+  else $("erreur-connexion").textContent = "Session expirée, reconnectez-vous.";
+  setTimeout(()=>$("mdp").focus(), 50);
+}
+function demarrer(){
+  if(!sessionOuverte()){ montrerVue("connexion"); setTimeout(()=>$("mdp").focus(), 50); return; }
+  $("entete-droite").style.display = "flex";
+  majHorloge(); clearInterval(demarrer._t); demarrer._t = setInterval(majHorloge, 30000);
+  const m = location.hash.match(/^#client\/(\d+)$/);
+  if(m) ouvrirClient(Number(m[1])); else allerClients();
+}
+
+// ---------- liste des clients ----------
+function allerClients(){
+  location.hash = "";
+  $("fil").textContent = "";
+  montrerVue("clients");
+  chargerClients(true);
+}
+async function chargerClients(sonder){
+  try{
+    const r = await api("clients");
+    afficherClients(r.clients);
+    afficherBande(r.alertes);
+    if(sonder && r.clients.some(c => c.url_site)){
+      $("info-sondage").textContent = "Vérification des sites clients…";
+      try{ await api("sonder"); }catch(e){ console.warn(e); }
+      const r2 = await api("clients");
+      afficherClients(r2.clients);
+      $("info-sondage").textContent = "Sites vérifiés à " + new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}) + ". Contrôle automatique chaque nuit.";
+    } else if(sonder){
+      $("info-sondage").textContent = "";
+    }
+  }catch(e){ message(e.message); }
+}
+function afficherBande(n){
+  const b = $("bande");
+  if(n > 0){ b.textContent = n + (n > 1 ? " événements suspects" : " événement suspect") + " à examiner (journal : lot 4)."; b.classList.add("visible"); }
+  else b.classList.remove("visible");
+}
+function afficherClients(liste){
+  const corps = $("corps-clients"); corps.innerHTML = "";
+  $("vide-clients").style.display = liste.length ? "none" : "block";
+  $("table-clients").style.display = liste.length ? "table" : "none";
+  for(const c of liste){
+    const tr = document.createElement("tr");
+    tr.className = "cliquable";
+    tr.onclick = () => ouvrirClient(c.id);
+    tr.innerHTML =
+      `<td><span class="voyant ${voyantClasse(c)}" title="${html(voyantTexte(c))}"></span></td>` +
+      `<td><strong>${html(c.nom)}</strong>${c.url_site ? `<div class="petit">${html(c.url_site)}</div>` : ""}</td>` +
+      `<td class="num">${c.nb_sites}</td>` +
+      `<td class="masque-mobile">${dateCourte(c.dernier_depot)}</td>` +
+      `<td><span class="etat ${c.actif ? "actif" : "suspendu"}">${c.actif ? "Actif" : "Suspendu"}</span></td>`;
+    corps.appendChild(tr);
+  }
+}
+async function creerClient(){
+  $("erreur-nouveau-client").textContent = "";
+  const nom = $("nc-nom").value.trim();
+  const url_site = $("nc-url").value.trim();
+  if(!nom){ $("erreur-nouveau-client").textContent = "Le nom du client est obligatoire."; return; }
+  try{
+    const r = await api("client_creer", { nom, url_site });
+    $("nc-nom").value = ""; $("nc-url").value = "";
+    basculer("form-nouveau-client", false);
+    message("Client créé.");
+    ouvrirClient(r.id);
+  }catch(e){ $("erreur-nouveau-client").textContent = e.message; }
+}
+
+// ---------- fiche client ----------
+async function ouvrirClient(id){
+  try{
+    const r = await api("client", { id });
+    clientCourant = r;
+    location.hash = "#client/" + id;
+    afficherFiche(r);
+    montrerVue("client");
+  }catch(e){ message(e.message); allerClients(); }
+}
+function afficherFiche(r){
+  const c = r.client;
+  $("fil").innerHTML = `<a href="#" onclick="allerClients();return false">Clients</a> &nbsp;›&nbsp; ${html(c.nom)}`;
+  $("fc-nom").textContent = c.nom;
+  $("fc-voyant").className = "voyant grand " + voyantClasse(c);
+  $("fc-voyant").title = voyantTexte(c);
+  $("fc-sondage").textContent = voyantTexte(c);
+  $("fc-etat").className = "etat " + (c.actif ? "actif" : "suspendu");
+  $("fc-etat").textContent = c.actif ? "Actif" : "Suspendu depuis le " + dateCourte(c.suspendu_le);
+  $("fc-btn-suspendre").textContent = c.actif ? "Suspendre l'accès" : "Rétablir l'accès";
+  $("fc-btn-suspendre").className = "btn " + (c.actif ? "danger" : "orange");
+
+  // formulaire de modification
+  $("mc-nom").value = c.nom;
+  $("mc-url").value = c.url_site || "";
+  $("mc-seuil-jour").value = c.seuil_jour;
+  $("mc-seuil-vitesse").value = c.seuil_vitesse;
+  cleVisible = false; rendreCle();
+  basculer("form-modifier-client", false);
+  basculer("form-nouveau-site", false);
+
+  // sites
+  const cs = $("corps-sites"); cs.innerHTML = "";
+  $("vide-sites").style.display = r.sites.length ? "none" : "block";
+  $("fc-nb-sites").textContent = r.sites.length ? r.sites.length + (r.sites.length > 1 ? " sites" : " site") : "";
+  for(const s of r.sites){
+    const tr = document.createElement("tr");
+    tr.className = "cliquable";
+    tr.title = "Fiche du site : lot 2";
+    tr.onclick = () => message("La fiche du site (dépôt des pièces) arrive au lot 2.");
+    const libelle = s.nom || [s.adresse, s.commune].filter(Boolean).join(", ") || ("Site n° " + s.id);
+    tr.innerHTML =
+      `<td><strong>${html(libelle)}</strong>${s.commune && s.nom ? `<div class="petit">${html(s.commune)}</div>` : ""}</td>` +
+      `<td class="masque-mobile">${html([s.adresse, s.code_postal].filter(Boolean).join(" — "))}</td>` +
+      `<td class="num">${s.nb_pieces}</td>` +
+      `<td class="masque-mobile">${dateCourte(s.dernier_depot)}</td>` +
+      `<td>${s.nb_pieces ? "" : `<button class="btn danger" type="button" style="padding:4px 9px;font-size:13px" onclick="event.stopPropagation();supprimerSite(${s.id})">Retirer</button>`}</td>`;
+    cs.appendChild(tr);
+  }
+
+  // utilisateurs
+  const cu = $("corps-utilisateurs"); cu.innerHTML = "";
+  $("vide-utilisateurs").style.display = r.utilisateurs.length ? "none" : "block";
+  $("fc-nb-utilisateurs").textContent = r.utilisateurs.length ? r.utilisateurs.length + (r.utilisateurs.length > 1 ? " personnes" : " personne") : "";
+  for(const u of r.utilisateurs){
+    const bloque = u.bloque_jusqua && new Date(u.bloque_jusqua) > new Date();
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${html(u.courriel)}</td>` +
+      `<td class="masque-mobile">${html(u.nom)}</td>` +
+      `<td>${u.role === "responsable" ? "Responsable" : "Lecture"}</td>` +
+      `<td><span class="etat ${bloque ? "suspendu" : (u.active ? "actif" : "")}">${bloque ? "Suspendu jusqu'au " + dateFr(u.bloque_jusqua) : (u.active ? "Activé" : "En attente d'activation")}</span></td>`;
+    cu.appendChild(tr);
+  }
+
+  // journal des connexions
+  const cc = $("corps-connexions"); cc.innerHTML = "";
+  $("vide-connexions").style.display = r.connexions.length ? "none" : "block";
+  for(const x of r.connexions){
+    const personne = x.utilisateur_nom || x.utilisateur_courriel || x.courriel_saisi || "—";
+    const res = x.resultat === "ok" ? "Réussie" : x.resultat === "bloque" ? "Bloquée" : "Échouée";
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${dateFr(x.horodatage)}</td>` +
+      `<td>${html(personne)}</td>` +
+      `<td class="masque-mobile">${html(x.appareil || "—")}</td>` +
+      `<td><span class="etat ${x.resultat}">${res}</span></td>` +
+      `<td class="num">${x.telechargements}</td>`;
+    cc.appendChild(tr);
+  }
+}
+function rendreCle(){
+  const cle = clientCourant ? clientCourant.client.cle_lecture : "";
+  $("mc-cle").textContent = cleVisible ? cle : "•".repeat(Math.min(24, cle.length || 24));
+}
+function afficherCle(){ cleVisible = !cleVisible; rendreCle(); }
+async function copierCle(){
+  try{ await navigator.clipboard.writeText(clientCourant.client.cle_lecture); message("Clé copiée."); }
+  catch{ cleVisible = true; rendreCle(); message("Sélectionnez la clé affichée pour la copier."); }
+}
+async function regenererCle(){
+  if(!confirm("Régénérer la clé de lecture ? Le site client ne répondra plus tant que la nouvelle clé n'y est pas reportée.")) return;
+  try{
+    const r = await api("client_cle_regenerer", { id: clientCourant.client.id });
+    clientCourant.client.cle_lecture = r.cle_lecture; cleVisible = true; rendreCle();
+    message("Nouvelle clé générée.");
+  }catch(e){ $("erreur-modifier-client").textContent = e.message; }
+}
+async function enregistrerClient(){
+  $("erreur-modifier-client").textContent = "";
+  try{
+    await api("client_modifier", {
+      id: clientCourant.client.id,
+      nom: $("mc-nom").value, url_site: $("mc-url").value,
+      seuil_jour: $("mc-seuil-jour").value, seuil_vitesse: $("mc-seuil-vitesse").value
+    });
+    message("Enregistré.");
+    ouvrirClient(clientCourant.client.id);
+  }catch(e){ $("erreur-modifier-client").textContent = e.message; }
+}
+async function suspendreClient(){
+  const c = clientCourant.client;
+  const question = c.actif
+    ? `Suspendre l'accès de toute l'équipe de ${c.nom} ? Les pièces restent en place ; rétablissement d'un clic.`
+    : `Rétablir l'accès de ${c.nom} ?`;
+  if(!confirm(question)) return;
+  try{
+    await api("client_suspendre", { id: c.id, actif: !c.actif });
+    message(c.actif ? "Accès suspendu." : "Accès rétabli.");
+    ouvrirClient(c.id);
+  }catch(e){ message(e.message); }
+}
+async function creerSite(){
+  $("erreur-nouveau-site").textContent = "";
+  try{
+    await api("site_creer", {
+      client_id: clientCourant.client.id,
+      nom: $("ns-nom").value, adresse: $("ns-adresse").value,
+      code_postal: $("ns-cp").value, commune: $("ns-commune").value
+    });
+    ["ns-nom","ns-adresse","ns-cp","ns-commune"].forEach(i => $(i).value = "");
+    message("Site créé.");
+    ouvrirClient(clientCourant.client.id);
+  }catch(e){ $("erreur-nouveau-site").textContent = e.message; }
+}
+async function supprimerSite(id){
+  if(!confirm("Retirer ce site vide ?")) return;
+  try{ await api("site_supprimer", { id }); message("Site retiré."); ouvrirClient(clientCourant.client.id); }
+  catch(e){ message(e.message); }
+}
+
+// ---------- démarrage ----------
+window.addEventListener("hashchange", () => {
+  if(!sessionOuverte()) return;
+  const m = location.hash.match(/^#client\/(\d+)$/);
+  if(m){ if(!clientCourant || clientCourant.client.id !== Number(m[1])) ouvrirClient(Number(m[1])); }
+  else if(!$("vue-clients").classList.contains("active")) allerClients();
+});
+demarrer();
+</script>
+</body>
+</html>
