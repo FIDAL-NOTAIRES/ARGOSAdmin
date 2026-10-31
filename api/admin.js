@@ -1,5 +1,5 @@
 // ============================================================
-// ARGOSAdmin — api/admin.js — lot 1 (30/10/2026)
+// ARGOSAdmin — api/admin.js — lots 1 et 2 (31/10/2026)
 // Fonction serveur UNIQUE à actions (limite Vercel Hobby : 12 fonctions).
 // Appel : POST /api/admin  { action: "...", ...paramètres }
 // En-tête : Authorization: Bearer <jeton>  (sauf action "connexion")
@@ -9,10 +9,13 @@
 //   ARGOSADMIN_MDP      mot de passe administrateur provisoire (JFD seul) — remplacé au lot 5
 //   ARGOSADMIN_SECRET   (facultatif) secret de signature des jetons de session ;
 //                       à défaut, dérivé du mot de passe
-// Lot 2 (pour mémoire, non lues ici) :
+// Lot 2 — stockage des pièces sur Scaleway Object Storage (deux comptes) :
 //   SCW_PRINCIPAL_CLE / SCW_PRINCIPAL_SECRET / SCW_PRINCIPAL_BUCKET
 //   SCW_SAUVEGARDE_CLE / SCW_SAUVEGARDE_SECRET / SCW_SAUVEGARDE_BUCKET
-//   SCW_REGION (fr-par) / SCW_ENDPOINT (https://s3.fr-par.scw.cloud)
+//   SCW_REGION (défaut fr-par) ; l'hôte est <bucket>.s3.<région>.scw.cloud
+// Le navigateur envoie le fichier DIRECTEMENT vers les deux buckets avec des
+// adresses signées (limite Vercel de 4,5 Mo contournée) ; le serveur ne voit
+// jamais le fichier, il ne fait que signer, enregistrer et supprimer.
 // ============================================================
 
 const { neon } = require("@neondatabase/serverless");
@@ -89,6 +92,83 @@ async function sonderUrl(url) {
     clearTimeout(minuteur);
     return { ok: false, message: e.name === "AbortError" ? "Pas de réponse en 5 secondes" : (e.message || "Erreur réseau") };
   }
+}
+
+// ---------- Scaleway Object Storage (signature AWS v4, sans bibliothèque) ----------
+const RUBRIQUES = {
+  1: "Désignation et plans", 2: "Titre", 3: "Exploitation",
+  4: "Fiscalité", 5: "Diagnostics", 6: "Organisation de l'immeuble / de la zone",
+};
+function compteScaleway(nom) {
+  const p = nom === "sauvegarde" ? "SCW_SAUVEGARDE" : "SCW_PRINCIPAL";
+  const cle = process.env[p + "_CLE"], secret = process.env[p + "_SECRET"], bucket = process.env[p + "_BUCKET"];
+  if (!cle || !secret || !bucket) return null;
+  const region = process.env.SCW_REGION || "fr-par";
+  return { nom, cle, secret, bucket, region, hote: `${bucket}.s3.${region}.scw.cloud` };
+}
+function stockagePret() {
+  return !!(compteScaleway("principal") && compteScaleway("sauvegarde"));
+}
+function hex(b) { return Buffer.from(b).toString("hex"); }
+function hmac(cle, msg) { return crypto.createHmac("sha256", cle).update(msg, "utf8").digest(); }
+function sha256hex(msg) { return crypto.createHash("sha256").update(msg, "utf8").digest("hex"); }
+function encoderCle(cle) {
+  return cle.split("/").map((seg) => encodeURIComponent(seg).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())).join("/");
+}
+function dateAmz(d = new Date()) {
+  const iso = d.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  return { amz: iso, jour: iso.slice(0, 8) };
+}
+function cleSignature(compte, jour) {
+  const kDate = hmac("AWS4" + compte.secret, jour);
+  const kRegion = hmac(kDate, compte.region);
+  const kService = hmac(kRegion, "s3");
+  return hmac(kService, "aws4_request");
+}
+// Adresse signée (valable `expire` secondes) pour un PUT ou un GET depuis le navigateur
+function adresseSignee(compte, methode, cle, expire) {
+  const { amz, jour } = dateAmz();
+  const portee = `${jour}/${compte.region}/s3/aws4_request`;
+  const uri = "/" + encoderCle(cle);
+  const params = {
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${compte.cle}/${portee}`,
+    "X-Amz-Date": amz,
+    "X-Amz-Expires": String(expire),
+    "X-Amz-SignedHeaders": "host",
+  };
+  const requete = Object.keys(params).sort().map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
+  const canonique = [methode, uri, requete, `host:${compte.hote}\n`, "host", "UNSIGNED-PAYLOAD"].join("\n");
+  const aSigner = ["AWS4-HMAC-SHA256", amz, portee, sha256hex(canonique)].join("\n");
+  const signature = hex(hmac(cleSignature(compte, jour), aSigner));
+  return `https://${compte.hote}${uri}?${requete}&X-Amz-Signature=${signature}`;
+}
+// Requête signée exécutée par le serveur (vérification, suppression, réglage du bucket)
+// options : { requete: "cors", corps: "<xml>", type: "application/xml" }
+async function requeteSignee(compte, methode, cle, options = {}) {
+  const { amz, jour } = dateAmz();
+  const portee = `${jour}/${compte.region}/s3/aws4_request`;
+  const uri = "/" + encoderCle(cle || "");
+  const requete = options.requete ? `${encodeURIComponent(options.requete)}=` : "";
+  const entetes = { host: compte.hote, "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "x-amz-date": amz };
+  if (options.corps !== undefined) {
+    entetes["content-md5"] = crypto.createHash("md5").update(options.corps, "utf8").digest("base64");
+    entetes["content-type"] = options.type || "application/xml";
+  }
+  const noms = Object.keys(entetes).sort();
+  const canonique = [methode, uri, requete, noms.map((n) => `${n}:${entetes[n]}\n`).join(""), noms.join(";"), "UNSIGNED-PAYLOAD"].join("\n");
+  const aSigner = ["AWS4-HMAC-SHA256", amz, portee, sha256hex(canonique)].join("\n");
+  const signature = hex(hmac(cleSignature(compte, jour), aSigner));
+  const envoi = { "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "x-amz-date": amz,
+    Authorization: `AWS4-HMAC-SHA256 Credential=${compte.cle}/${portee}, SignedHeaders=${noms.join(";")}, Signature=${signature}` };
+  if (entetes["content-md5"]) { envoi["Content-MD5"] = entetes["content-md5"]; envoi["Content-Type"] = entetes["content-type"]; }
+  return fetch(`https://${compte.hote}${uri}${requete ? "?" + requete.replace(/=$/, "") : ""}`, {
+    method: methode, headers: envoi, body: options.corps,
+  });
+}
+function nomFichierPropre(nom) {
+  return String(nom || "piece").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120) || "piece";
 }
 
 // ---------- actions ----------
@@ -220,6 +300,135 @@ const actions = {
     await sql`DELETE FROM argos_site WHERE id = ${id}`;
     return { ok: true };
   },
+  // ===== LOT 2 — fiche site et pièces =====
+  async site(sql, p) {
+    const id = entier(p.id, 0);
+    const s = await sql`
+      SELECT s.*, c.nom AS client_nom, c.id AS client_id
+      FROM argos_site s JOIN argos_client c ON c.id = s.client_id WHERE s.id = ${id}`;
+    if (!s.length) throw new Error("Site introuvable.");
+    const pieces = await sql`
+      SELECT id, rubrique, nom_fichier, type_mime, taille, empreinte, copie_principale, copie_sauvegarde, sauvegarde_le, depose_le
+      FROM argos_piece WHERE site_id = ${id} ORDER BY rubrique, depose_le DESC`;
+    return { site: s[0], pieces, rubriques: RUBRIQUES, stockage_pret: stockagePret() };
+  },
+
+  async site_modifier(sql, p) {
+    const id = entier(p.id, 0);
+    const references_ = {
+      cadastre: texte(p.cadastre, 600),
+      surface: texte(p.surface, 60),
+      titre: texte(p.titre, 300),
+    };
+    const fiche = { designation: texte(p.designation, 4000) };
+    await sql`
+      UPDATE argos_site
+      SET nom = ${texte(p.nom, 160)}, adresse = ${texte(p.adresse, 300)},
+          code_postal = ${texte(p.code_postal, 10)}, commune = ${texte(p.commune, 120)},
+          references_ = ${JSON.stringify(references_)}::jsonb, fiche = ${JSON.stringify(fiche)}::jsonb,
+          maj_le = NOW()
+      WHERE id = ${id}`;
+    return { ok: true };
+  },
+
+  // Étape 1 du dépôt : le serveur réserve la clé et signe deux adresses d'envoi (principal + sauvegarde)
+  async piece_preparer(sql, p) {
+    if (!stockagePret()) throw new Error("Stockage Scaleway non configuré (variables SCW_* absentes sur Vercel).");
+    const site_id = entier(p.site_id, 0);
+    const rubrique = entier(p.rubrique, 0);
+    if (!RUBRIQUES[rubrique]) throw new Error("Rubrique inconnue.");
+    const s = await sql`SELECT id, client_id FROM argos_site WHERE id = ${site_id}`;
+    if (!s.length) throw new Error("Site introuvable.");
+    const nom = nomFichierPropre(p.nom_fichier);
+    const cle = `client-${s[0].client_id}/site-${site_id}/rubrique-${rubrique}/${Date.now()}-${nom}`;
+    const principal = compteScaleway("principal"), sauvegarde = compteScaleway("sauvegarde");
+    return {
+      cle_objet: cle,
+      envoi_principal: adresseSignee(principal, "PUT", cle, 900),
+      envoi_sauvegarde: adresseSignee(sauvegarde, "PUT", cle, 900),
+      bucket_principal: principal.bucket,
+      bucket_sauvegarde: sauvegarde.bucket,
+    };
+  },
+
+  // Étape 2 : le navigateur a envoyé le fichier ; on vérifie la présence dans les deux comptes et on enregistre
+  async piece_enregistrer(sql, p) {
+    const site_id = entier(p.site_id, 0);
+    const rubrique = entier(p.rubrique, 0);
+    const cle = texte(p.cle_objet, 600);
+    if (!cle.startsWith(`client-`) || !cle.includes(`/site-${site_id}/rubrique-${rubrique}/`)) throw new Error("Clé d'objet incohérente.");
+    const principal = compteScaleway("principal"), sauvegarde = compteScaleway("sauvegarde");
+    const [rp, rs] = await Promise.all([requeteSignee(principal, "HEAD", cle), requeteSignee(sauvegarde, "HEAD", cle)]);
+    const okP = rp.ok, okS = rs.ok;
+    if (!okP) throw new Error("Le fichier n'est pas arrivé dans le compte principal (réponse " + rp.status + ").");
+    const ins = await sql`
+      INSERT INTO argos_piece (site_id, rubrique, nom_fichier, type_mime, taille, empreinte, cle_objet,
+                               bucket_principal, bucket_sauvegarde, copie_principale, copie_sauvegarde, sauvegarde_le)
+      VALUES (${site_id}, ${rubrique}, ${texte(p.nom_fichier, 255)}, ${texte(p.type_mime, 120) || "application/pdf"},
+              ${entier(p.taille, 0)}, ${texte(p.empreinte, 64)}, ${cle},
+              ${principal.bucket}, ${sauvegarde.bucket}, ${okP}, ${okS}, ${okS ? new Date() : null})
+      RETURNING id`;
+    await sql`UPDATE argos_site SET maj_le = NOW() WHERE id = ${site_id}`;
+    if (!okS) {
+      const site = await sql`SELECT client_id FROM argos_site WHERE id = ${site_id}`;
+      await sql`INSERT INTO argos_evenement (client_id, nature, detail)
+                VALUES (${site[0].client_id}, 'sauvegarde_echec', ${"Copie de sauvegarde absente pour " + cle})`;
+    }
+    return { id: ins[0].id, copie_sauvegarde: okS };
+  },
+
+  // Adresse de lecture signée (5 minutes) pour ouvrir une pièce depuis ARGOSAdmin
+  async piece_lien(sql, p) {
+    const id = entier(p.id, 0);
+    const r = await sql`SELECT cle_objet, copie_principale, copie_sauvegarde, nom_fichier FROM argos_piece WHERE id = ${id}`;
+    if (!r.length) throw new Error("Pièce introuvable.");
+    const compte = r[0].copie_principale ? compteScaleway("principal") : compteScaleway("sauvegarde");
+    if (!compte) throw new Error("Stockage non configuré.");
+    return { url: adresseSignee(compte, "GET", r[0].cle_objet, 300), nom_fichier: r[0].nom_fichier };
+  },
+
+  // Suppression dans les deux comptes puis en base
+  async piece_supprimer(sql, p) {
+    const id = entier(p.id, 0);
+    const r = await sql`SELECT cle_objet, site_id FROM argos_piece WHERE id = ${id}`;
+    if (!r.length) throw new Error("Pièce introuvable.");
+    const principal = compteScaleway("principal"), sauvegarde = compteScaleway("sauvegarde");
+    const resultats = await Promise.allSettled([
+      principal ? requeteSignee(principal, "DELETE", r[0].cle_objet) : Promise.reject(new Error("principal absent")),
+      sauvegarde ? requeteSignee(sauvegarde, "DELETE", r[0].cle_objet) : Promise.reject(new Error("sauvegarde absente")),
+    ]);
+    const echecs = resultats.filter((x) => x.status === "rejected" || (x.value && !x.value.ok && x.value.status !== 404));
+    if (echecs.length) throw new Error("Suppression incomplète côté stockage ; la pièce reste enregistrée. Réessayez.");
+    await sql`DELETE FROM argos_piece WHERE id = ${id}`;
+    await sql`UPDATE argos_site SET maj_le = NOW() WHERE id = ${r[0].site_id}`;
+    return { ok: true };
+  },
+
+  // Pose la règle CORS sur les deux buckets pour autoriser l'envoi direct depuis ARGOSAdmin
+  async stockage_configurer(sql, p, req) {
+    if (!stockagePret()) throw new Error("Variables SCW_* absentes sur Vercel.");
+    const origine = texte(p.origine, 200) || `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><CORSConfiguration><CORSRule>` +
+      `<AllowedOrigin>${origine}</AllowedOrigin><AllowedMethod>PUT</AllowedMethod><AllowedMethod>GET</AllowedMethod>` +
+      `<AllowedMethod>HEAD</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>3000</MaxAgeSeconds>` +
+      `</CORSRule></CORSConfiguration>`;
+    const resultats = {};
+    for (const nom of ["principal", "sauvegarde"]) {
+      const compte = compteScaleway(nom);
+      const r = await requeteSignee(compte, "PUT", "", { requete: "cors", corps: xml });
+      resultats[nom] = r.ok ? "ok" : `${r.status} ${(await r.text()).slice(0, 200)}`;
+    }
+    return { origine, resultats };
+  },
+
+  // Contrôle de l'état du stockage pour l'écran (sans exposer les clés)
+  async stockage_etat() {
+    const principal = compteScaleway("principal"), sauvegarde = compteScaleway("sauvegarde");
+    return {
+      principal: principal ? { bucket: principal.bucket, region: principal.region } : null,
+      sauvegarde: sauvegarde ? { bucket: sauvegarde.bucket, region: sauvegarde.region } : null,
+    };
+  },
 };
 
 // ---------- point d'entrée ----------
@@ -270,7 +479,7 @@ module.exports = async (req, res) => {
 
   try {
     const sql = neon(process.env.DATABASE_URL);
-    const resultat = await fn(sql, corps);
+    const resultat = await fn(sql, corps, req);
     return res.end(JSON.stringify(resultat));
   } catch (e) {
     console.error("[argosadmin]", action, e);
