@@ -105,7 +105,35 @@
   .message{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--nuit);color:#fff;
     padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
   .message.visible{opacity:1}
+  /* ---- fiche site (lot 2) ---- */
+  .cases{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .case{background:var(--papier);border:1px solid var(--trait);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+  .case .titre{padding:12px 16px;border-bottom:1px solid var(--trait);display:flex;align-items:center;gap:10px}
+  .case .titre h3{font-size:17px}
+  .case .titre .nb{margin-left:auto;font-size:13px;color:var(--gris)}
+  .case ul{list-style:none;margin:0;padding:0}
+  .case li{display:flex;align-items:center;gap:8px;padding:9px 16px;border-bottom:1px solid #EEF1F4;font-size:14px}
+  .case li:last-child{border-bottom:0}
+  .case li .nom{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .case li .nom a{color:var(--texte);text-decoration:none}
+  .case li .nom a:hover{color:var(--canard);text-decoration:underline}
+  .case li .meta{font-size:12px;color:var(--gris);white-space:nowrap}
+  .case li .copies{font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--trait);color:var(--gris);white-space:nowrap}
+  .case li .copies.ok{color:var(--vert);border-color:#BFE3CF}
+  .case li .copies.partiel{color:var(--orange);border-color:#FFD8AE}
+  .case li button{border:0;background:transparent;color:var(--carmin);font-size:13px;padding:2px 6px}
+  .case li button:hover{text-decoration:underline}
+  .zone{margin:10px 12px 12px;border:2px dashed #BFCAD6;border-radius:8px;padding:14px;text-align:center;color:var(--gris);font-size:13px;cursor:pointer}
+  .zone:hover,.zone.survol{border-color:var(--canard);background:#F2F8F9;color:var(--canard)}
+  .zone.inactif{cursor:default;opacity:.6}
+  .progression{margin:0 12px 12px;font-size:13px;color:var(--canard);display:none}
+  .progression.visible{display:block}
+  .avert{background:#FFF6E8;border:1px solid #FFD8AE;color:#7A4A00;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:18px}
+  .ligne.trois{grid-template-columns:1fr 1fr 1fr}
+  textarea{font:inherit;width:100%;padding:9px 11px;border:1px solid var(--trait);border-radius:7px;background:#fff;min-height:90px;resize:vertical}
+  textarea:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--canard)}
   @media (max-width:760px){
+    .cases,.ligne.trois{grid-template-columns:1fr}
     header{padding:0 14px}
     main{padding:18px 12px 40px}
     .ligne.deux,.ligne.quatre{grid-template-columns:1fr}
@@ -296,6 +324,50 @@
     <p><a href="#" onclick="allerClients();return false">← Retour à la liste des clients</a></p>
   </section>
 
+  <!-- ===================== FICHE SITE (lot 2) ===================== -->
+  <section class="vue" id="vue-site">
+    <div class="entete">
+      <h2 id="fs-nom"></h2>
+      <span class="petit" id="fs-maj"></span>
+      <div class="droite">
+        <button class="btn second" type="button" onclick="basculer('form-site')">Coordonnées et références</button>
+      </div>
+    </div>
+    <div class="avert" id="fs-avert-stockage" style="display:none">Le stockage des pièces n'est pas encore configuré : les six variables SCW_* manquent sur Vercel. Le dépôt sera actif dès qu'elles seront posées.</div>
+    <p class="info" id="fs-stockage-outils" style="display:none;margin:-8px 0 16px">Si un envoi est refusé par le navigateur (blocage d'origine), <a href="#" onclick="configurerStockage();return false">autoriser ARGOSAdmin sur les deux comptes</a> — à faire une seule fois.</p>
+
+    <div class="bloc">
+      <div class="formulaire-inline" id="form-site">
+        <p class="info" style="margin:0 0 4px">La fiche se pré-remplira au dépôt de la note de désignation ou du titre (à venir). Vous pouvez aussi saisir les références dès maintenant.</p>
+        <div class="ligne deux">
+          <div><label for="fs-f-nom">Nom du site</label><input type="text" id="fs-f-nom"></div>
+          <div><label for="fs-f-adresse">Adresse</label><input type="text" id="fs-f-adresse"></div>
+        </div>
+        <div class="ligne trois">
+          <div><label for="fs-f-cp">Code postal</label><input type="text" id="fs-f-cp"></div>
+          <div><label for="fs-f-commune">Commune</label><input type="text" id="fs-f-commune"></div>
+          <div><label for="fs-f-surface">Contenance</label><input type="text" id="fs-f-surface" placeholder="12 a 34 ca"></div>
+        </div>
+        <label for="fs-f-cadastre">Références cadastrales</label>
+        <input type="text" id="fs-f-cadastre" placeholder="Section AB n° 123, 124">
+        <label for="fs-f-titre">Titre de propriété (acte, date, notaire, publication)</label>
+        <input type="text" id="fs-f-titre">
+        <label for="fs-f-designation">Extrait de la désignation (repris en tête de la fiche PDF)</label>
+        <textarea id="fs-f-designation"></textarea>
+        <div class="erreur" id="erreur-site"></div>
+        <div class="actions">
+          <button class="btn" type="button" onclick="enregistrerSite()">Enregistrer</button>
+          <button class="btn second" type="button" onclick="basculer('form-site',false)">Fermer</button>
+        </div>
+      </div>
+      <div class="corps" id="fs-resume"></div>
+    </div>
+
+    <div class="cases" id="fs-cases"></div>
+
+    <p style="margin-top:22px"><a href="#" id="fs-retour" onclick="return false">← Retour à la fiche client</a></p>
+  </section>
+
 </main>
 
 <div class="message" id="message"></div>
@@ -307,7 +379,8 @@
 // La session est un jeton signé, gardé dans sessionStorage (8 h).
 // ============================================================
 const CLE_SESSION = "argosadmin_jeton";
-let clientCourant = null;   // données de la fiche ouverte
+let clientCourant = null;   // données de la fiche client ouverte
+let siteCourant = null;     // données de la fiche site ouverte
 let cleVisible = false;
 
 // ---------- utilitaires ----------
@@ -414,6 +487,8 @@ function demarrer(){
   if(!sessionOuverte()){ montrerVue("connexion"); setTimeout(()=>$("mdp").focus(), 50); return; }
   $("entete-droite").style.display = "flex";
   majHorloge(); clearInterval(demarrer._t); demarrer._t = setInterval(majHorloge, 30000);
+  const ms = location.hash.match(/^#site\/(\d+)$/);
+  if(ms){ ouvrirSite(Number(ms[1])); return; }
   const m = location.hash.match(/^#client\/(\d+)$/);
   if(m) ouvrirClient(Number(m[1])); else allerClients();
 }
@@ -515,8 +590,7 @@ function afficherFiche(r){
   for(const s of r.sites){
     const tr = document.createElement("tr");
     tr.className = "cliquable";
-    tr.title = "Fiche du site : lot 2";
-    tr.onclick = () => message("La fiche du site (dépôt des pièces) arrive au lot 2.");
+    tr.onclick = () => ouvrirSite(s.id);
     const libelle = s.nom || [s.adresse, s.commune].filter(Boolean).join(", ") || ("Site n° " + s.id);
     tr.innerHTML =
       `<td><strong>${html(libelle)}</strong>${s.commune && s.nom ? `<div class="petit">${html(s.commune)}</div>` : ""}</td>` +
@@ -618,11 +692,154 @@ async function supprimerSite(id){
   catch(e){ message(e.message); }
 }
 
+// ---------- fiche site (lot 2) ----------
+function tailleFr(o){
+  if(!o && o !== 0) return "";
+  if(o < 1024) return o + " o";
+  if(o < 1048576) return (o/1024).toFixed(0) + " Ko";
+  return (o/1048576).toFixed(1).replace(".", ",") + " Mo";
+}
+async function ouvrirSite(id){
+  try{
+    const r = await api("site", { id });
+    siteCourant = r;
+    location.hash = "#site/" + id;
+    afficherSite(r);
+    montrerVue("site");
+  }catch(e){ message(e.message); }
+}
+function libelleSite(s){
+  return s.nom || [s.adresse, s.commune].filter(Boolean).join(", ") || ("Site n° " + s.id);
+}
+function afficherSite(r){
+  const s = r.site, refs = s.references_ || {}, fiche = s.fiche || {};
+  $("fil").innerHTML = `<a href="#" onclick="allerClients();return false">Clients</a> &nbsp;›&nbsp; <a href="#" onclick="ouvrirClient(${s.client_id});return false">${html(s.client_nom)}</a> &nbsp;›&nbsp; ${html(libelleSite(s))}`;
+  $("fs-nom").textContent = libelleSite(s);
+  $("fs-maj").textContent = "Mis à jour le " + dateFr(s.maj_le);
+  $("fs-retour").onclick = () => { ouvrirClient(s.client_id); return false; };
+  $("fs-avert-stockage").style.display = r.stockage_pret ? "none" : "block";
+  $("fs-stockage-outils").style.display = r.stockage_pret ? "block" : "none";
+
+  $("fs-f-nom").value = s.nom || ""; $("fs-f-adresse").value = s.adresse || "";
+  $("fs-f-cp").value = s.code_postal || ""; $("fs-f-commune").value = s.commune || "";
+  $("fs-f-surface").value = refs.surface || ""; $("fs-f-cadastre").value = refs.cadastre || "";
+  $("fs-f-titre").value = refs.titre || ""; $("fs-f-designation").value = fiche.designation || "";
+  basculer("form-site", false);
+
+  const lignes = [];
+  if(s.adresse || s.code_postal || s.commune) lignes.push(`<div>${html([s.adresse, [s.code_postal, s.commune].filter(Boolean).join(" ")].filter(Boolean).join(" — "))}</div>`);
+  if(refs.cadastre) lignes.push(`<div class="petit">Cadastre : ${html(refs.cadastre)}${refs.surface ? " — " + html(refs.surface) : ""}</div>`);
+  if(refs.titre) lignes.push(`<div class="petit">Titre : ${html(refs.titre)}</div>`);
+  if(fiche.designation) lignes.push(`<div class="petit" style="margin-top:6px;white-space:pre-line">${html(fiche.designation)}</div>`);
+  $("fs-resume").innerHTML = lignes.length ? lignes.join("") : `<span class="info">Aucune coordonnée saisie. Ouvrez « Coordonnées et références » ou déposez la note de désignation.</span>`;
+
+  const cases = $("fs-cases"); cases.innerHTML = "";
+  for(const n of [1,2,3,4,5,6]){
+    const pieces = r.pieces.filter(p => p.rubrique === n);
+    const div = document.createElement("div");
+    div.className = "case";
+    div.innerHTML =
+      `<div class="titre"><h3>${html(r.rubriques[n])}</h3><span class="nb">${pieces.length ? pieces.length + (pieces.length > 1 ? " pièces" : " pièce") : ""}</span></div>` +
+      `<ul>` + pieces.map(p => {
+        const copies = p.copie_principale && p.copie_sauvegarde ? ["ok","2 copies"] : p.copie_principale ? ["partiel","sans sauvegarde"] : ["partiel","sauvegarde seule"];
+        return `<li><span class="nom"><a href="#" onclick="ouvrirPiece(${p.id});return false" title="${html(p.nom_fichier)}">${html(p.nom_fichier)}</a></span>` +
+               `<span class="meta">${tailleFr(p.taille)} · ${dateCourte(p.depose_le)}</span>` +
+               `<span class="copies ${copies[0]}">${copies[1]}</span>` +
+               `<button type="button" onclick="supprimerPiece(${p.id}, '${html(p.nom_fichier).replace(/'/g,"&#39;")}')">Retirer</button></li>`;
+      }).join("") + `</ul>` +
+      `<div class="zone ${r.stockage_pret ? "" : "inactif"}" data-rubrique="${n}">${r.stockage_pret ? "Glissez les fichiers ici, ou cliquez pour choisir" : "Dépôt inactif : stockage non configuré"}</div>` +
+      `<div class="progression" id="prog-${n}"></div>`;
+    cases.appendChild(div);
+    const zone = div.querySelector(".zone");
+    if(r.stockage_pret){
+      zone.onclick = () => {
+        const inp = document.createElement("input"); inp.type = "file"; inp.multiple = true;
+        inp.onchange = () => deposerFichiers(n, inp.files);
+        inp.click();
+      };
+      zone.ondragover = (e) => { e.preventDefault(); zone.classList.add("survol"); };
+      zone.ondragleave = () => zone.classList.remove("survol");
+      zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("survol"); deposerFichiers(n, e.dataTransfer.files); };
+    }
+  }
+}
+async function enregistrerSite(){
+  $("erreur-site").textContent = "";
+  try{
+    await api("site_modifier", {
+      id: siteCourant.site.id,
+      nom: $("fs-f-nom").value, adresse: $("fs-f-adresse").value,
+      code_postal: $("fs-f-cp").value, commune: $("fs-f-commune").value,
+      surface: $("fs-f-surface").value, cadastre: $("fs-f-cadastre").value,
+      titre: $("fs-f-titre").value, designation: $("fs-f-designation").value
+    });
+    message("Enregistré.");
+    ouvrirSite(siteCourant.site.id);
+  }catch(e){ $("erreur-site").textContent = e.message; }
+}
+async function empreinteSha256(fichier){
+  const tampon = await fichier.arrayBuffer();
+  const h = await crypto.subtle.digest("SHA-256", tampon);
+  return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+async function envoyerVers(url, fichier){
+  const rep = await fetch(url, { method: "PUT", body: fichier, headers: { "Content-Type": fichier.type || "application/octet-stream" } });
+  if(!rep.ok) throw new Error("Envoi refusé par le stockage (" + rep.status + ")");
+}
+async function deposerFichiers(rubrique, fichiers){
+  const liste = Array.from(fichiers || []);
+  if(!liste.length) return;
+  const prog = $("prog-" + rubrique); prog.classList.add("visible");
+  let n = 0;
+  for(const f of liste){
+    n++;
+    try{
+      prog.textContent = `${f.name} (${n}/${liste.length}) : préparation…`;
+      const empreinte = await empreinteSha256(f);
+      const prep = await api("piece_preparer", { site_id: siteCourant.site.id, rubrique, nom_fichier: f.name });
+      prog.textContent = `${f.name} (${n}/${liste.length}) : envoi vers le compte principal…`;
+      await envoyerVers(prep.envoi_principal, f);
+      prog.textContent = `${f.name} (${n}/${liste.length}) : copie de sauvegarde…`;
+      let sauvegardeOk = true;
+      try{ await envoyerVers(prep.envoi_sauvegarde, f); }catch(e){ sauvegardeOk = false; console.warn("sauvegarde", e); }
+      prog.textContent = `${f.name} (${n}/${liste.length}) : enregistrement…`;
+      const r = await api("piece_enregistrer", {
+        site_id: siteCourant.site.id, rubrique, cle_objet: prep.cle_objet,
+        nom_fichier: f.name, type_mime: f.type, taille: f.size, empreinte
+      });
+      if(!r.copie_sauvegarde || !sauvegardeOk) message(f.name + " : déposé, mais la copie de sauvegarde a échoué (signalé).");
+    }catch(e){
+      message(f.name + " : " + e.message);
+    }
+  }
+  prog.classList.remove("visible"); prog.textContent = "";
+  ouvrirSite(siteCourant.site.id);
+}
+async function configurerStockage(){
+  try{
+    const r = await api("stockage_configurer", { origine: location.origin });
+    message("Principal : " + r.resultats.principal + " — Sauvegarde : " + r.resultats.sauvegarde);
+  }catch(e){ message(e.message); }
+}
+async function ouvrirPiece(id){
+  try{
+    const r = await api("piece_lien", { id });
+    window.open(r.url, "_blank", "noopener");
+  }catch(e){ message(e.message); }
+}
+async function supprimerPiece(id, nom){
+  if(!confirm("Retirer définitivement « " + nom + " » des deux comptes de stockage ?")) return;
+  try{ await api("piece_supprimer", { id }); message("Pièce retirée."); ouvrirSite(siteCourant.site.id); }
+  catch(e){ message(e.message); }
+}
+
 // ---------- démarrage ----------
 window.addEventListener("hashchange", () => {
   if(!sessionOuverte()) return;
+  const ms = location.hash.match(/^#site\/(\d+)$/);
+  if(ms){ if(!siteCourant || siteCourant.site.id !== Number(ms[1])) ouvrirSite(Number(ms[1])); return; }
   const m = location.hash.match(/^#client\/(\d+)$/);
-  if(m){ if(!clientCourant || clientCourant.client.id !== Number(m[1])) ouvrirClient(Number(m[1])); }
+  if(m){ if(!$("vue-client").classList.contains("active") || !clientCourant || clientCourant.client.id !== Number(m[1])) ouvrirClient(Number(m[1])); }
   else if(!$("vue-clients").classList.contains("active")) allerClients();
 });
 demarrer();
