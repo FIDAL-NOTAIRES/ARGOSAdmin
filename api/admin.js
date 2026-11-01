@@ -1,5 +1,5 @@
 // ============================================================
-// ARGOSAdmin — api/admin.js — lots 1 et 2 (31/10/2026)
+// ARGOSAdmin — api/admin.js — lots 1, 2 et 3 (31/10/2026)
 // Fonction serveur UNIQUE à actions (limite Vercel Hobby : 12 fonctions).
 // Appel : POST /api/admin  { action: "...", ...paramètres }
 // En-tête : Authorization: Bearer <jeton>  (sauf action "connexion")
@@ -16,6 +16,12 @@
 // Le navigateur envoie le fichier DIRECTEMENT vers les deux buckets avec des
 // adresses signées (limite Vercel de 4,5 Mo contournée) ; le serveur ne voit
 // jamais le fichier, il ne fait que signer, enregistrer et supprimer.
+// Lot 3 — utilisateurs, liens d'activation, création des sites clients sur Vercel :
+//   VERCEL_JETON        clé d'accès Vercel (espace réservé à ARGOS)      VERCEL_EQUIPE (facultatif) identifiant de l'équipe Vercel
+//   ARGOS_DEPOT         dépôt GitHub des sites clients, défaut FIDAL-NOTAIRES/ARGOS
+//   ARGOS_LECTEUR_URL   chaîne Neon du rôle argos_lecteur (recopiée dans chaque site client)
+//   SCW_LECTURE_CLE / SCW_LECTURE_SECRET   clé Scaleway LECTURE SEULE (recopiée dans chaque site client)
+//   BREVO_CLE / BREVO_EXPEDITEUR / ADMIN_COURRIEL   facultatifs (courriels) ; sans Brevo, les liens sont affichés à l'écran
 // ============================================================
 
 const { neon } = require("@neondatabase/serverless");
@@ -86,7 +92,7 @@ async function sonderUrl(url) {
       rep = await fetch(url, { method: "GET", signal: controleur.signal });
     }
     clearTimeout(minuteur);
-    if (rep.ok) return { ok: true, message: "" };
+    if (rep.ok) { let version = null; try { version = (await rep.json()).version || null; } catch {} return { ok: true, message: "", version }; }
     return { ok: false, message: `Réponse ${rep.status}` };
   } catch (e) {
     clearTimeout(minuteur);
@@ -171,6 +177,86 @@ function nomFichierPropre(nom) {
     .replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120) || "piece";
 }
 
+
+// ---------- LOT 3 : liens d'activation, courriels, géocodage, Vercel ----------
+const DUREE_LIEN_MS = 48 * 60 * 60 * 1000; // 48 heures
+async function lienActivation(sql, utilisateurId, objet, req) {
+  const u = await sql`SELECT u.id, u.courriel, u.nom, u.prenom, c.nom AS client_nom, c.url_site, c.id AS client_id FROM argos_utilisateur u JOIN argos_client c ON c.id = u.client_id WHERE u.id = ${utilisateurId}`;
+  if (!u.length) throw new Error("Utilisateur introuvable.");
+  const jeton = crypto.randomBytes(24).toString("base64url");
+  await sql`UPDATE argos_utilisateur SET activation_hachage = ${crypto.createHash("sha256").update(jeton).digest("hex")}, activation_expire = ${new Date(Date.now() + DUREE_LIEN_MS)}, activation_objet = ${objet}, maj_le = NOW() WHERE id = ${utilisateurId}`;
+  const base = (u[0].url_site || "").replace(/\/+$/, "");
+  if (!base) throw new Error("L'adresse du site client n'est pas renseignée : créez d'abord le site (bouton « Déployer le site »).");
+  const route = objet === "activation" ? "activation" : objet;
+  const url = `${base}/#${route}/${jeton}`;
+  const objetMail = objet === "activation" ? "Votre accès au portail patrimoine FIDAL Notaires" : objet === "code" ? "Portail FIDAL Notaires : nouveau code secret" : "Portail FIDAL Notaires : nouveau mot de passe";
+  const corps = objet === "activation"
+    ? `Bonjour ${u[0].prenom} ${u[0].nom},\n\nVous êtes invité par FIDAL NOTAIRES à accéder au portail du patrimoine foncier de votre société.\n\nLe lien ci-dessous est valable quarante-huit heures et ne sert qu'une fois :\n${url}\n\nActiver mon accès : ${url}\n\nFIDAL Notaires`
+    : `Bonjour ${u[0].prenom} ${u[0].nom},\n\nÀ votre demande, FIDAL Notaires vous invite à choisir ${objet === "code" ? "un nouveau code secret" : "un nouveau mot de passe"} pour le portail du patrimoine foncier de votre société.\n\nLe lien ci-dessous est valable quarante-huit heures et ne sert qu'une fois :\n${url}\n\nFIDAL Notaires`;
+  const envoye = await envoyerCourriel(sql, u[0].client_id, [u[0].courriel], objetMail, corps);
+  return { url, envoye };
+}
+async function envoyerCourriel(sql, clientId, destinataires, objet, corps) {
+  const cle = process.env.BREVO_CLE, exp = process.env.BREVO_EXPEDITEUR;
+  if (!cle || !exp) return false;
+  try {
+    const r = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST", headers: { "api-key": cle, "Content-Type": "application/json" },
+      body: JSON.stringify({ sender: { email: exp, name: "FIDAL Notaires" }, to: destinataires.map((e) => ({ email: e })), subject: objet, textContent: corps }),
+    });
+    return r.ok;
+  } catch (e) { console.error("[brevo]", e.message); return false; }
+}
+// Coordonnées d'un site par la Base Adresse Nationale (gratuite) ; silencieux en cas d'échec
+async function geocoder(adresse, code_postal, commune) {
+  const q = [adresse, code_postal, commune].filter(Boolean).join(" ");
+  if (!q.trim()) return null;
+  try {
+    const r = await fetch(`https://api-adresse.data.gouv.fr/search/?limit=1&q=${encodeURIComponent(q)}${code_postal ? "&postcode=" + encodeURIComponent(code_postal) : ""}`);
+    const g = await r.json();
+    const f = g.features && g.features[0];
+    return f ? { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] } : null;
+  } catch { return null; }
+}
+// Vercel : crée le projet du client, branché sur le dépôt ARGOS, avec ses variables, puis lance le déploiement
+async function vercelApi(chemin, methode, corps) {
+  const jeton = process.env.VERCEL_JETON;
+  if (!jeton) throw new Error("Variable VERCEL_JETON absente sur ARGOSAdmin.");
+  const equipe = process.env.VERCEL_EQUIPE ? (chemin.includes("?") ? "&" : "?") + "teamId=" + encodeURIComponent(process.env.VERCEL_EQUIPE) : "";
+  const r = await fetch("https://api.vercel.com" + chemin + equipe, { method: methode || "GET", headers: { Authorization: "Bearer " + jeton, "Content-Type": "application/json" }, body: corps ? JSON.stringify(corps) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error("Vercel : " + ((d.error && (d.error.message || d.error.code)) || r.status));
+  return d;
+}
+async function deployerSiteClient(client, code) {
+  for (const v of ["ARGOS_LECTEUR_URL", "SCW_LECTURE_CLE", "SCW_LECTURE_SECRET"]) if (!process.env[v]) throw new Error(`Variable ${v} absente sur ARGOSAdmin (nécessaire pour créer un site client).`);
+  const depot = process.env.ARGOS_DEPOT || "FIDAL-NOTAIRES/ARGOS";
+  const nomProjet = `argos-${code}`;
+  const variables = {
+    ARGOS_DATABASE_URL: process.env.ARGOS_LECTEUR_URL,
+    ARGOS_CLE_LECTURE: client.cle_lecture,
+    ARGOS_SECRET: crypto.randomBytes(32).toString("base64url"),
+    SCW_LECTURE_CLE: process.env.SCW_LECTURE_CLE,
+    SCW_LECTURE_SECRET: process.env.SCW_LECTURE_SECRET,
+    SCW_REGION: process.env.SCW_REGION || "fr-par",
+  };
+  if (process.env.BREVO_CLE) variables.BREVO_CLE = process.env.BREVO_CLE;
+  if (process.env.BREVO_EXPEDITEUR) variables.BREVO_EXPEDITEUR = process.env.BREVO_EXPEDITEUR;
+  if (process.env.ADMIN_COURRIEL) variables.ADMIN_COURRIEL = process.env.ADMIN_COURRIEL;
+  const env = Object.entries(variables).map(([key, value]) => ({ key, value, target: ["production", "preview"], type: "encrypted" }));
+  let projet;
+  if (client.vercel_projet) {
+    projet = await vercelApi(`/v9/projects/${encodeURIComponent(client.vercel_projet)}`);
+    for (const e of env) await vercelApi(`/v10/projects/${projet.id}/env?upsert=true`, "POST", e);
+  } else {
+    projet = await vercelApi("/v10/projects", "POST", { name: nomProjet, framework: null, gitRepository: { type: "github", repo: depot }, environmentVariables: env });
+  }
+  const repoId = projet.link && projet.link.repoId;
+  const deploiement = await vercelApi("/v13/deployments", "POST", { name: projet.name, project: projet.id, target: "production",
+    gitSource: repoId ? { type: "github", repoId, ref: "main" } : { type: "github", org: depot.split("/")[0], repo: depot.split("/")[1], ref: "main" } });
+  return { projet: projet.id, nom: projet.name, url: `https://${projet.name}.vercel.app`, deploiement: deploiement.id, etat: deploiement.readyState || deploiement.status };
+}
+
 // ---------- actions ----------
 const actions = {
   async clients(sql) {
@@ -179,7 +265,8 @@ const actions = {
              (SELECT COUNT(*)::int FROM argos_site s WHERE s.client_id = c.id) AS nb_sites,
              (SELECT COUNT(*)::int FROM argos_utilisateur u WHERE u.client_id = c.id) AS nb_utilisateurs,
              (SELECT MAX(p.depose_le) FROM argos_piece p JOIN argos_site s ON s.id = p.site_id WHERE s.client_id = c.id) AS dernier_depot,
-             so.dernier_ok, so.dernier_echec, so.message AS sondage_message
+             c.code, c.vercel_projet, so.dernier_ok, so.dernier_echec, so.message AS sondage_message, so.version,
+             (SELECT COUNT(*)::int FROM argos_evenement e WHERE e.client_id = c.id AND e.traite = FALSE) AS nb_evenements
       FROM argos_client c
       LEFT JOIN argos_sondage so ON so.client_id = c.id
       ORDER BY c.nom`;
@@ -192,8 +279,8 @@ const actions = {
     const resultats = await Promise.all(clients.map(async (c) => {
       const r = await sonderUrl(c.url_site);
       if (r.ok === true) {
-        await sql`INSERT INTO argos_sondage (client_id, dernier_ok, message) VALUES (${c.id}, NOW(), '')
-                  ON CONFLICT (client_id) DO UPDATE SET dernier_ok = NOW(), message = ''`;
+        await sql`INSERT INTO argos_sondage (client_id, dernier_ok, message, version) VALUES (${c.id}, NOW(), '', ${r.version || null})
+                  ON CONFLICT (client_id) DO UPDATE SET dernier_ok = NOW(), message = '', version = ${r.version || null}`;
       } else if (r.ok === false) {
         await sql`INSERT INTO argos_sondage (client_id, dernier_echec, message) VALUES (${c.id}, NOW(), ${r.message})
                   ON CONFLICT (client_id) DO UPDATE SET dernier_echec = NOW(), message = ${r.message}`;
@@ -207,14 +294,21 @@ const actions = {
     const nom = texte(p.nom, 120);
     if (!nom) throw new Error("Le nom du client est obligatoire.");
     const url_site = texte(p.url_site, 300);
+    const code = texte(p.code, 40).toLowerCase().replace(/[^a-z0-9-]/g, "") || null;
     const cle = nouvelleCleLecture();
     const ins = await sql`
-      INSERT INTO argos_client (nom, cle_lecture, url_site)
-      VALUES (${nom}, ${cle}, ${url_site})
+      INSERT INTO argos_client (nom, cle_lecture, url_site, code)
+      VALUES (${nom}, ${cle}, ${url_site}, ${code})
       RETURNING id`;
     const id = ins[0].id;
     await sql`INSERT INTO argos_sondage (client_id) VALUES (${id}) ON CONFLICT DO NOTHING`;
-    return { id, cle_lecture: cle };
+    let deploiement = null;
+    if (p.deployer && code) {
+      try { deploiement = await deployerSiteClient({ id, nom, code, cle_lecture: cle, url_site: "" }, code);
+            await sql`UPDATE argos_client SET url_site = ${deploiement.url}, vercel_projet = ${deploiement.projet} WHERE id = ${id}`; }
+      catch (e) { deploiement = { erreur: e.message }; }
+    }
+    return { id, cle_lecture: cle, deploiement };
   },
 
   async client(sql, p) {
@@ -231,11 +325,15 @@ const actions = {
       FROM argos_site s WHERE s.client_id = ${id}
       ORDER BY s.commune, s.nom, s.id`;
     const utilisateurs = await sql`
-      SELECT id, courriel, nom, role, active, bloque_jusqua, cree_le
-      FROM argos_utilisateur WHERE client_id = ${id} ORDER BY role DESC, courriel`;
+      SELECT u.id, u.courriel, u.nom, u.prenom, u.role, u.active, u.bloque_jusqua, u.cree_le, u.active_le, u.conditions_le, u.suspendu_le,
+             u.coupe_par_responsable, u.derniere_connexion, u.activation_expire, u.activation_objet,
+             (SELECT COALESCE(json_agg(json_build_object('id', a.id, 'libelle', a.libelle, 'type', a.type, 'vu_le', a.vu_le) ORDER BY a.vu_le DESC), '[]'::json) FROM argos_appareil a WHERE a.utilisateur_id = u.id) AS appareils,
+             (SELECT COALESCE(json_agg(e.site_id), '[]'::json) FROM argos_site_exclu e WHERE e.utilisateur_id = u.id) AS sites_exclus
+      FROM argos_utilisateur u WHERE u.client_id = ${id} ORDER BY u.nom, u.prenom`;
+    const evenements = await sql`SELECT id, nature, detail, cree_le FROM argos_evenement WHERE client_id = ${id} AND traite = FALSE ORDER BY cree_le DESC LIMIT 50`;
     const connexions = await sql`
-      SELECT cx.id, cx.horodatage, cx.resultat, cx.courriel AS courriel_saisi, cx.adresse_ip,
-             u.nom AS utilisateur_nom, u.courriel AS utilisateur_courriel,
+      SELECT cx.id, cx.horodatage, cx.resultat, cx.detail, cx.courriel AS courriel_saisi, cx.adresse_ip,
+             u.nom AS utilisateur_nom, u.prenom AS utilisateur_prenom, u.courriel AS utilisateur_courriel,
              a.libelle AS appareil,
              (SELECT COUNT(*)::int FROM argos_telechargement t
                WHERE t.utilisateur_id = cx.utilisateur_id
@@ -246,7 +344,7 @@ const actions = {
       LEFT JOIN argos_appareil a ON a.id = cx.appareil_id
       WHERE cx.client_id = ${id}
       ORDER BY cx.horodatage DESC LIMIT 100`;
-    return { client: c[0], sites, utilisateurs, connexions };
+    return { client: c[0], sites, utilisateurs, connexions, evenements, vercel_pret: !!(process.env.VERCEL_JETON && process.env.ARGOS_LECTEUR_URL) };
   },
 
   async client_modifier(sql, p) {
@@ -256,9 +354,10 @@ const actions = {
     const url_site = texte(p.url_site, 300);
     const seuil_jour = Math.max(1, entier(p.seuil_jour, 30));
     const seuil_vitesse = Math.max(1, entier(p.seuil_vitesse, 10));
+    const code = texte(p.code, 40).toLowerCase().replace(/[^a-z0-9-]/g, "") || null;
     await sql`
       UPDATE argos_client
-      SET nom = ${nom}, url_site = ${url_site}, seuil_jour = ${seuil_jour}, seuil_vitesse = ${seuil_vitesse}, maj_le = NOW()
+      SET nom = ${nom}, url_site = ${url_site}, code = ${code}, seuil_jour = ${seuil_jour}, seuil_vitesse = ${seuil_vitesse}, maj_le = NOW()
       WHERE id = ${id}`;
     return { ok: true };
   },
@@ -286,11 +385,12 @@ const actions = {
     const adresse = texte(p.adresse, 300);
     const commune = texte(p.commune, 120);
     const code_postal = texte(p.code_postal, 10);
+    const geo = await geocoder(adresse, code_postal, commune);
     const ins = await sql`
-      INSERT INTO argos_site (client_id, nom, adresse, commune, code_postal)
-      VALUES (${client_id}, ${nom}, ${adresse}, ${commune}, ${code_postal})
+      INSERT INTO argos_site (client_id, nom, adresse, commune, code_postal, lat, lng)
+      VALUES (${client_id}, ${nom}, ${adresse}, ${commune}, ${code_postal}, ${geo ? geo.lat : null}, ${geo ? geo.lng : null})
       RETURNING id`;
-    return { id: ins[0].id };
+    return { id: ins[0].id, geolocalise: !!geo };
   },
 
   async site_supprimer(sql, p) {
@@ -320,15 +420,17 @@ const actions = {
       surface: texte(p.surface, 60),
       titre: texte(p.titre, 300),
     };
-    const fiche = { designation: texte(p.designation, 4000) };
+    const fiche = { designation: texte(p.designation, 4000), nature: texte(p.nature, 80) };
+    const geo = await geocoder(texte(p.adresse, 300), texte(p.code_postal, 10), texte(p.commune, 120));
     await sql`
       UPDATE argos_site
       SET nom = ${texte(p.nom, 160)}, adresse = ${texte(p.adresse, 300)},
           code_postal = ${texte(p.code_postal, 10)}, commune = ${texte(p.commune, 120)},
           references_ = ${JSON.stringify(references_)}::jsonb, fiche = ${JSON.stringify(fiche)}::jsonb,
+          lat = COALESCE(${geo ? geo.lat : null}, lat), lng = COALESCE(${geo ? geo.lng : null}, lng),
           maj_le = NOW()
       WHERE id = ${id}`;
-    return { ok: true };
+    return { ok: true, geolocalise: !!geo };
   },
 
   // Étape 1 du dépôt : le serveur réserve la clé et signe deux adresses d'envoi (principal + sauvegarde)
@@ -428,6 +530,137 @@ const actions = {
       principal: principal ? { bucket: principal.bucket, region: principal.region } : null,
       sauvegarde: sauvegarde ? { bucket: sauvegarde.bucket, region: sauvegarde.region } : null,
     };
+  },
+
+  // ===== LOT 3 — utilisateurs, activation, appareils, droits, journal, création de client (31/10/2026) =====
+  async utilisateur_creer(sql, p, req) {
+    const client_id = entier(p.client_id, 0);
+    const nom = texte(p.nom, 80), prenom = texte(p.prenom, 80), courriel = texte(p.courriel, 200).toLowerCase();
+    if (!nom || !prenom || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(courriel)) throw new Error("Nom, prénom et courriel valide sont obligatoires.");
+    const role = p.responsable ? "responsable" : "lecture";
+    const ins = await sql`INSERT INTO argos_utilisateur (client_id, courriel, nom, prenom, role, active)
+                          VALUES (${client_id}, ${courriel}, ${nom}, ${prenom}, ${role}, FALSE) RETURNING id`;
+    const id = ins[0].id;
+    const exclus = Array.isArray(p.sites_exclus) ? p.sites_exclus.map((x) => entier(x, 0)).filter(Boolean) : [];
+    for (const site_id of exclus) await sql`INSERT INTO argos_site_exclu (utilisateur_id, site_id) VALUES (${id}, ${site_id}) ON CONFLICT DO NOTHING`;
+    const lien = await lienActivation(sql, id, "activation", req);
+    return { id, lien: lien.url, envoye: lien.envoye };
+  },
+
+  async utilisateur_modifier(sql, p) {
+    const id = entier(p.id, 0);
+    const nom = texte(p.nom, 80), prenom = texte(p.prenom, 80);
+    const role = p.responsable ? "responsable" : "lecture";
+    await sql`UPDATE argos_utilisateur SET nom = ${nom}, prenom = ${prenom}, role = ${role}, maj_le = NOW() WHERE id = ${id}`;
+    await sql`DELETE FROM argos_site_exclu WHERE utilisateur_id = ${id}`;
+    const exclus = Array.isArray(p.sites_exclus) ? p.sites_exclus.map((x) => entier(x, 0)).filter(Boolean) : [];
+    for (const site_id of exclus) await sql`INSERT INTO argos_site_exclu (utilisateur_id, site_id) VALUES (${id}, ${site_id}) ON CONFLICT DO NOTHING`;
+    return { ok: true };
+  },
+
+  // Renvoie un lien (activation | code | mdp) et l'envoie par courriel si Brevo est configuré
+  async utilisateur_lien(sql, p, req) {
+    const id = entier(p.id, 0);
+    const objet = ["activation", "code", "mdp"].includes(p.objet) ? p.objet : "activation";
+    const lien = await lienActivation(sql, id, objet, req);
+    return { lien: lien.url, envoye: lien.envoye, objet };
+  },
+
+  async utilisateur_suspendre(sql, p) {
+    const id = entier(p.id, 0);
+    const suspendre = !!p.suspendre;
+    if (suspendre) {
+      await sql`UPDATE argos_utilisateur SET suspendu_le = NOW(), maj_le = NOW() WHERE id = ${id}`;
+      await sql`UPDATE argos_session SET revoque_le = NOW() WHERE utilisateur_id = ${id} AND revoque_le IS NULL`;
+    } else {
+      // rétablissement : lève la suspension manuelle, la coupure du responsable et le blocage 48 h
+      await sql`UPDATE argos_utilisateur SET suspendu_le = NULL, coupe_par_responsable = NULL, bloque_jusqua = NULL, echecs_mdp = 0, echecs_code = 0, maj_le = NOW() WHERE id = ${id}`;
+    }
+    const u = await sql`SELECT client_id FROM argos_utilisateur WHERE id = ${id}`;
+    if (u.length) await sql`INSERT INTO argos_connexion (client_id, utilisateur_id, resultat, detail) VALUES (${u[0].client_id}, ${id}, ${suspendre ? "suspension" : "reinitialisation"}, ${suspendre ? "Suspendu par FIDAL Notaires" : "Accès rétabli par FIDAL Notaires"})`;
+    return { ok: true };
+  },
+
+  async utilisateur_supprimer(sql, p) {
+    const id = entier(p.id, 0);
+    const n = await sql`SELECT COUNT(*)::int AS n FROM argos_connexion WHERE utilisateur_id = ${id}`;
+    if (n[0].n > 0) throw new Error("Cette personne a un historique de connexions : suspendez-la plutôt que de la supprimer (le journal doit rester complet).");
+    await sql`DELETE FROM argos_utilisateur WHERE id = ${id}`;
+    return { ok: true };
+  },
+
+  async appareil_retirer(sql, p) {
+    const id = entier(p.id, 0);
+    await sql`UPDATE argos_session SET revoque_le = NOW() WHERE appareil_id = ${id} AND revoque_le IS NULL`;
+    await sql`DELETE FROM argos_appareil WHERE id = ${id}`;
+    return { ok: true };
+  },
+
+  // Journal filtré (personne, période, type) pour l'onglet Connexions et l'export PDF
+  async journal(sql, p) {
+    const client_id = entier(p.client_id, 0);
+    const utilisateur_id = entier(p.utilisateur_id, 0) || null;
+    const type = texte(p.type, 30) || null;
+    const depuis = p.depuis ? new Date(p.depuis) : null, jusqua = p.jusqua ? new Date(p.jusqua + "T23:59:59") : null;
+    const lignes = await sql`
+      SELECT cx.id, cx.horodatage, cx.resultat, cx.detail, cx.courriel AS courriel_saisi, cx.adresse_ip,
+             u.nom AS utilisateur_nom, u.prenom AS utilisateur_prenom, u.courriel AS utilisateur_courriel, a.libelle AS appareil
+      FROM argos_connexion cx
+      LEFT JOIN argos_utilisateur u ON u.id = cx.utilisateur_id
+      LEFT JOIN argos_appareil a ON a.id = cx.appareil_id
+      WHERE cx.client_id = ${client_id}
+        AND (${utilisateur_id}::int IS NULL OR cx.utilisateur_id = ${utilisateur_id})
+        AND (${type}::text IS NULL OR cx.resultat = ${type})
+        AND (${depuis}::timestamptz IS NULL OR cx.horodatage >= ${depuis})
+        AND (${jusqua}::timestamptz IS NULL OR cx.horodatage <= ${jusqua})
+      ORDER BY cx.horodatage DESC LIMIT 500`;
+    const telechargements = await sql`
+      SELECT t.id, t.horodatage, u.nom AS utilisateur_nom, u.prenom AS utilisateur_prenom, p.nom_fichier, s.nom AS site, s.commune
+      FROM argos_telechargement t JOIN argos_utilisateur u ON u.id = t.utilisateur_id
+      JOIN argos_piece p ON p.id = t.piece_id JOIN argos_site s ON s.id = p.site_id
+      WHERE u.client_id = ${client_id}
+        AND (${utilisateur_id}::int IS NULL OR t.utilisateur_id = ${utilisateur_id})
+        AND (${depuis}::timestamptz IS NULL OR t.horodatage >= ${depuis})
+        AND (${jusqua}::timestamptz IS NULL OR t.horodatage <= ${jusqua})
+      ORDER BY t.horodatage DESC LIMIT 500`;
+    return { connexions: lignes, telechargements };
+  },
+
+  // Événements (bande rouge) : liste et marquage
+  async evenements(sql, p) {
+    const client_id = entier(p.client_id, 0) || null;
+    const lignes = await sql`SELECT e.id, e.client_id, c.nom AS client_nom, e.nature, e.detail, e.traite, e.cree_le
+                             FROM argos_evenement e LEFT JOIN argos_client c ON c.id = e.client_id
+                             WHERE (${client_id}::int IS NULL OR e.client_id = ${client_id}) AND (e.traite = FALSE OR e.cree_le > NOW() - INTERVAL '30 days')
+                             ORDER BY e.traite, e.cree_le DESC LIMIT 200`;
+    return { evenements: lignes };
+  },
+  async evenement_traiter(sql, p) {
+    const id = entier(p.id, 0);
+    if (p.tous && p.client_id) await sql`UPDATE argos_evenement SET traite = TRUE WHERE client_id = ${entier(p.client_id, 0)}`;
+    else await sql`UPDATE argos_evenement SET traite = TRUE WHERE id = ${id}`;
+    return { ok: true };
+  },
+  async client_vu(sql, p) {
+    await sql`UPDATE argos_client SET vu_le = NOW() WHERE id = ${entier(p.id, 0)}`;
+    return { ok: true };
+  },
+
+  // ---- création du site client sur Vercel (un déploiement par client, même dépôt GitHub ARGOS) ----
+  async vercel_etat() {
+    return { pret: !!(process.env.VERCEL_JETON && process.env.ARGOS_LECTEUR_URL && process.env.SCW_LECTURE_CLE && process.env.SCW_LECTURE_SECRET), depot: process.env.ARGOS_DEPOT || "FIDAL-NOTAIRES/ARGOS",
+      manque: ["VERCEL_JETON", "ARGOS_LECTEUR_URL", "SCW_LECTURE_CLE", "SCW_LECTURE_SECRET"].filter((v) => !process.env[v]) };
+  },
+  async client_deployer(sql, p) {
+    const id = entier(p.id, 0);
+    const c = await sql`SELECT id, nom, code, cle_lecture, url_site, vercel_projet FROM argos_client WHERE id = ${id}`;
+    if (!c.length) throw new Error("Client introuvable.");
+    const client = c[0];
+    const code = texte(p.code, 40).toLowerCase().replace(/[^a-z0-9-]/g, "") || client.code;
+    if (!code) throw new Error("Nom court obligatoire (lettres, chiffres, tirets).");
+    const r = await deployerSiteClient(client, code);
+    await sql`UPDATE argos_client SET code = ${code}, url_site = ${r.url}, vercel_projet = ${r.projet}, maj_le = NOW() WHERE id = ${id}`;
+    return r;
   },
 };
 
