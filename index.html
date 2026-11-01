@@ -132,6 +132,27 @@
   .ligne.trois{grid-template-columns:1fr 1fr 1fr}
   textarea{font:inherit;width:100%;padding:9px 11px;border:1px solid var(--trait);border-radius:7px;background:#fff;min-height:90px;resize:vertical}
   textarea:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--canard)}
+  /* ---- lot 3 ---- */
+  .etat.attente{color:var(--orange);border-color:#FFD8AE;background:#FFF6E8}
+  .etat.coupe{color:var(--carmin);border-color:#F0C3D0;background:#FBEDF1}
+  .mini{border:1px solid var(--trait);background:#fff;color:var(--canard);border-radius:6px;padding:3px 8px;font-size:12.5px;margin:2px 2px 2px 0}
+  .mini:hover{background:#EEF6F7}
+  .mini.rouge{color:var(--carmin);border-color:#F0C3D0}
+  .mini.rouge:hover{background:#FBEDF1}
+  .puce-app{display:inline-block;font-size:12px;color:var(--gris);border:1px solid var(--trait);border-radius:10px;padding:1px 7px;margin:1px 2px 1px 0}
+  .puce-app button{border:0;background:none;color:var(--carmin);padding:0 0 0 4px;font-size:12px}
+  .cases-sites{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:6px}
+  .cases-sites label{display:flex;align-items:center;gap:6px;margin:0;color:var(--texte);font-size:13.5px}
+  .filtres{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:12px 18px;border-bottom:1px solid var(--trait);background:#FBFCFD}
+  .filtres label{margin:0 0 3px}
+  .filtres select,.filtres input[type=date]{font:inherit;padding:6px 9px;border:1px solid var(--trait);border-radius:7px;background:#fff}
+  .evenements{background:#FBEDF1;border:1px solid #F0C3D0;border-radius:10px;padding:12px 16px;margin-bottom:18px}
+  .evenements h3{font-size:16px;color:var(--carmin);margin-bottom:6px}
+  .evenements li{font-size:13.5px;margin:3px 0;white-space:pre-line}
+  .lien-copie{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#F6FBFB;border:1px dashed var(--canard);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px}
+  .lien-copie code{flex:1;min-width:200px}
+  .version{font-size:11px;color:var(--gris)}
+  .version.retard{color:var(--orange);font-weight:600}
   @media (max-width:760px){
     .cases,.ligne.trois{grid-template-columns:1fr}
     header{padding:0 14px}
@@ -152,7 +173,7 @@
     <button type="button" onclick="deconnecter()">Se déconnecter</button>
   </div>
 </header>
-<div class="bande" id="bande"></div>
+<div class="bande" id="bande" style="cursor:pointer" onclick="allerClients()"></div>
 
 <main>
 
@@ -189,10 +210,14 @@
             <input type="text" id="nc-nom" placeholder="Logis Métropole">
           </div>
           <div>
-            <label for="nc-url">Adresse du site client (facultatif, pour le voyant)</label>
-            <input type="url" id="nc-url" placeholder="https://…vercel.app">
+            <label for="nc-code">Nom court pour l'adresse du site (lettres, chiffres, tirets)</label>
+            <input type="text" id="nc-code" placeholder="aftl" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')">
           </div>
         </div>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--texte)"><input type="checkbox" id="nc-deployer" checked> Déployer immédiatement le site client (projet Vercel « argos-&lt;nom court&gt; », variables posées automatiquement)</label>
+        <p class="info" id="nc-vercel-info"></p>
+        <label for="nc-url">Ou adresse d'un site déjà existant (facultatif)</label>
+        <input type="url" id="nc-url" placeholder="https://…">
         <div class="erreur" id="erreur-nouveau-client"></div>
         <div class="actions">
           <button class="btn" type="button" onclick="creerClient()">Créer le client</button>
@@ -206,6 +231,7 @@
             <th>Client</th>
             <th class="num">Sites</th>
             <th class="masque-mobile">Dernier dépôt</th>
+            <th class="masque-mobile">Version</th>
             <th>État</th>
           </tr>
         </thead>
@@ -227,6 +253,7 @@
       </div>
     </div>
     <p class="petit" id="fc-sondage"></p>
+    <div class="evenements" id="fc-evenements" style="display:none"></div>
 
     <div class="bloc">
       <div class="formulaire-inline" id="form-modifier-client">
@@ -237,7 +264,16 @@
           </div>
           <div>
             <label for="mc-url">Adresse du site client</label>
-            <input type="url" id="mc-url" placeholder="https://…vercel.app">
+            <input type="url" id="mc-url" placeholder="https://…">
+          </div>
+          <div>
+            <label for="mc-code">Nom court (adresse du site)</label>
+            <input type="text" id="mc-code" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')">
+          </div>
+          <div>
+            <label>Site client sur Vercel</label>
+            <div><button class="btn second" type="button" id="mc-deployer" onclick="deployerClient()">Déployer / mettre à jour le site</button></div>
+            <p class="info" id="mc-deploiement"></p>
           </div>
           <div>
             <label for="mc-seuil-jour">Plafond de téléchargements par jour et par utilisateur</label>
@@ -294,31 +330,67 @@
       <div class="vide" id="vide-sites" style="display:none">Aucun site. Ajoutez le premier actif de ce client.</div>
     </div>
 
-    <!-- Utilisateurs -->
+    <!-- Utilisateurs (lot 3) -->
     <div class="bloc">
       <div class="titre">
         <h3>Utilisateurs et droits</h3>
         <span class="petit" id="fc-nb-utilisateurs"></span>
-        <div class="droite"><span class="info">Création et activation au lot 3</span></div>
+        <div class="droite"><button class="btn" type="button" onclick="ouvrirFormUtilisateur()">Ajouter un utilisateur</button></div>
+      </div>
+      <div class="formulaire-inline" id="form-utilisateur">
+        <input type="hidden" id="fu-id">
+        <div class="ligne trois">
+          <div><label for="fu-nom">Nom</label><input type="text" id="fu-nom"></div>
+          <div><label for="fu-prenom">Prénom</label><input type="text" id="fu-prenom"></div>
+          <div><label for="fu-courriel">Courriel</label><input type="text" id="fu-courriel" placeholder="prenom.nom@societe.fr"></div>
+        </div>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--texte)"><input type="checkbox" id="fu-responsable"> Responsable (point de contact : voit le journal de son équipe, reçoit les alertes, peut couper un accès)</label>
+        <label>Sites accessibles (tous cochés par défaut ; décochez pour retirer)</label>
+        <div class="cases-sites" id="fu-sites"></div>
+        <div class="erreur" id="erreur-utilisateur"></div>
+        <div class="actions">
+          <button class="btn" type="button" id="fu-btn" onclick="enregistrerUtilisateur()">Créer et préparer le lien d'activation</button>
+          <button class="btn second" type="button" onclick="basculer('form-utilisateur',false)">Annuler</button>
+        </div>
+        <div id="fu-lien"></div>
       </div>
       <table>
-        <thead><tr><th>Courriel</th><th class="masque-mobile">Nom</th><th>Droit</th><th>État</th></tr></thead>
+        <thead><tr><th>Personne</th><th>Rôle</th><th>État</th><th class="masque-mobile">Dernière connexion</th><th class="masque-mobile">Appareils connus</th><th></th></tr></thead>
         <tbody id="corps-utilisateurs"></tbody>
       </table>
-      <div class="vide" id="vide-utilisateurs" style="display:none">Aucun utilisateur. L'équipe du client sera créée ici au lot 3.</div>
+      <div class="vide" id="vide-utilisateurs" style="display:none">Aucun utilisateur. Ajoutez les personnes indiquées par le point de contact du client.</div>
     </div>
 
-    <!-- Journal -->
+    <!-- Journal (lot 3) -->
     <div class="bloc">
       <div class="titre">
-        <h3>Journal des connexions</h3>
-        <span class="petit">100 dernières</span>
+        <h3>Connexions</h3>
+        <span class="petit" id="fc-nb-connexions"></span>
+        <div class="droite"><button class="btn second" type="button" onclick="exporterJournal()">Exporter en PDF</button></div>
+      </div>
+      <div class="filtres">
+        <div><label for="fj-personne">Personne</label><select id="fj-personne" onchange="chargerJournal()"><option value="">Toutes</option></select></div>
+        <div><label for="fj-type">Type</label><select id="fj-type" onchange="chargerJournal()">
+          <option value="">Tous</option><option value="ok">Réussies</option><option value="echec">Échecs</option><option value="bloque">Bloquées</option>
+          <option value="nouvel_appareil">Nouvel appareil</option><option value="coupure_responsable">Coupure par le responsable</option>
+          <option value="suspension">Suspensions</option><option value="reinitialisation">Réinitialisations</option><option value="activation">Activations</option><option value="code_echec">Codes incorrects</option></select></div>
+        <div><label for="fj-depuis">Du</label><input type="date" id="fj-depuis" onchange="chargerJournal()"></div>
+        <div><label for="fj-jusqua">Au</label><input type="date" id="fj-jusqua" onchange="chargerJournal()"></div>
+        <div><label>&nbsp;</label><button class="btn second" type="button" onclick="$('fj-personne').value='';$('fj-type').value='';$('fj-depuis').value='';$('fj-jusqua').value='';chargerJournal()">Effacer</button></div>
       </div>
       <table>
-        <thead><tr><th>Date et heure</th><th>Personne</th><th class="masque-mobile">Appareil</th><th>Résultat</th><th class="num">Téléchargements</th></tr></thead>
+        <thead><tr><th>Date et heure</th><th>Personne</th><th class="masque-mobile">Appareil</th><th>Résultat</th></tr></thead>
         <tbody id="corps-connexions"></tbody>
       </table>
       <div class="vide" id="vide-connexions" style="display:none">Aucune connexion enregistrée.</div>
+    </div>
+    <div class="bloc">
+      <div class="titre"><h3>Pièces consultées</h3><span class="petit" id="fc-nb-telechargements"></span></div>
+      <table>
+        <thead><tr><th>Date et heure</th><th>Personne</th><th>Pièce</th><th class="masque-mobile">Site</th></tr></thead>
+        <tbody id="corps-telechargements"></tbody>
+      </table>
+      <div class="vide" id="vide-telechargements" style="display:none">Aucune pièce consultée.</div>
     </div>
 
     <p><a href="#" onclick="allerClients();return false">← Retour à la liste des clients</a></p>
@@ -348,6 +420,8 @@
           <div><label for="fs-f-commune">Commune</label><input type="text" id="fs-f-commune"></div>
           <div><label for="fs-f-surface">Contenance</label><input type="text" id="fs-f-surface" placeholder="12 a 34 ca"></div>
         </div>
+        <label for="fs-f-nature">Nature du bien (affichée sur le portail : entrepôt, bureaux, terrain…)</label>
+        <input type="text" id="fs-f-nature" placeholder="Entrepôt">
         <label for="fs-f-cadastre">Références cadastrales</label>
         <input type="text" id="fs-f-cadastre" placeholder="Section AB n° 123, 124">
         <label for="fs-f-titre">Titre de propriété (acte, date, notaire, publication)</label>
@@ -372,9 +446,10 @@
 
 <div class="message" id="message"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 // ============================================================
-// ARGOSAdmin — lot 1 — page unique
+// ARGOSAdmin — lots 1 à 3 — page unique
 // Vues : connexion → liste des clients → fiche client
 // La session est un jeton signé, gardé dans sessionStorage (8 h).
 // ============================================================
@@ -501,6 +576,7 @@ function allerClients(){
   chargerClients(true);
 }
 async function chargerClients(sonder){
+  api("vercel_etat").then(v => { $("nc-vercel-info").textContent = v.pret ? "Déploiement automatique prêt (dépôt " + v.depot + ")." : "Déploiement automatique indisponible : variables manquantes sur ARGOSAdmin — " + v.manque.join(", ") + "."; $("nc-deployer").checked = v.pret; $("nc-deployer").disabled = !v.pret; }).catch(()=>{});
   try{
     const r = await api("clients");
     afficherClients(r.clients);
@@ -518,10 +594,12 @@ async function chargerClients(sonder){
 }
 function afficherBande(n){
   const b = $("bande");
-  if(n > 0){ b.textContent = n + (n > 1 ? " événements suspects" : " événement suspect") + " à examiner (journal : lot 4)."; b.classList.add("visible"); }
+  if(n > 0){ b.textContent = n + (n > 1 ? " événements à examiner" : " événement à examiner") + " — ouvrez la fiche du client concerné (pastille rouge)."; b.classList.add("visible"); }
   else b.classList.remove("visible");
 }
+function compareVersion(a, b){ const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number); for(let i=0;i<3;i++){ if((x[i]||0)!==(y[i]||0)) return (x[i]||0)-(y[i]||0); } return 0; }
 function afficherClients(liste){
+  const versionMax = liste.map(c => c.version).filter(Boolean).sort(compareVersion).pop() || "";
   const corps = $("corps-clients"); corps.innerHTML = "";
   $("vide-clients").style.display = liste.length ? "none" : "block";
   $("table-clients").style.display = liste.length ? "table" : "none";
@@ -534,7 +612,8 @@ function afficherClients(liste){
       `<td><strong>${html(c.nom)}</strong>${c.url_site ? `<div class="petit">${html(c.url_site)}</div>` : ""}</td>` +
       `<td class="num">${c.nb_sites}</td>` +
       `<td class="masque-mobile">${dateCourte(c.dernier_depot)}</td>` +
-      `<td><span class="etat ${c.actif ? "actif" : "suspendu"}">${c.actif ? "Actif" : "Suspendu"}</span></td>`;
+      `<td class="masque-mobile"><span class="version ${c.version && versionMax && c.version !== versionMax ? "retard" : ""}" title="${c.version && versionMax && c.version !== versionMax ? "Site en retard : dernière version " + versionMax : ""}">${html(c.version || "—")}</span></td>` +
+      `<td><span class="etat ${c.actif ? "actif" : "suspendu"}">${c.actif ? "Actif" : "Suspendu"}</span>${c.nb_evenements ? ` <span class="etat coupe" title="Événements à examiner">${c.nb_evenements}</span>` : ""}</td>`;
     corps.appendChild(tr);
   }
 }
@@ -542,12 +621,18 @@ async function creerClient(){
   $("erreur-nouveau-client").textContent = "";
   const nom = $("nc-nom").value.trim();
   const url_site = $("nc-url").value.trim();
+  const code = $("nc-code").value.trim();
+  const deployer = $("nc-deployer").checked;
   if(!nom){ $("erreur-nouveau-client").textContent = "Le nom du client est obligatoire."; return; }
+  if(deployer && !code){ $("erreur-nouveau-client").textContent = "Le nom court est obligatoire pour déployer le site."; return; }
   try{
-    const r = await api("client_creer", { nom, url_site });
-    $("nc-nom").value = ""; $("nc-url").value = "";
+    $("erreur-nouveau-client").textContent = deployer ? "Création du client et du site sur Vercel (une minute environ)…" : "";
+    const r = await api("client_creer", { nom, url_site, code, deployer });
+    $("nc-nom").value = ""; $("nc-url").value = ""; $("nc-code").value = "";
     basculer("form-nouveau-client", false);
-    message("Client créé.");
+    if(r.deploiement && r.deploiement.erreur) message("Client créé, mais le déploiement a échoué : " + r.deploiement.erreur);
+    else if(r.deploiement) message("Client créé, site en cours de déploiement : " + r.deploiement.url);
+    else message("Client créé.");
     ouvrirClient(r.id);
   }catch(e){ $("erreur-nouveau-client").textContent = e.message; }
 }
@@ -564,6 +649,17 @@ async function ouvrirClient(id){
 }
 function afficherFiche(r){
   const c = r.client;
+  api("client_vu", { id: c.id }).catch(()=>{});
+  const ev = $("fc-evenements");
+  if(r.evenements && r.evenements.length){
+    ev.style.display = "block";
+    ev.innerHTML = `<h3>${r.evenements.length > 1 ? r.evenements.length + " événements à examiner" : "Un événement à examiner"}</h3><ul style="margin:0;padding-left:18px">` +
+      r.evenements.map(e => `<li><strong>${dateFr(e.cree_le)}</strong> — ${html(libelleNature(e.nature))} : ${html(e.detail || "")} <button class="mini" type="button" onclick="traiterEvenement(${e.id})">Vu</button></li>`).join("") +
+      `</ul><div class="actions" style="margin-top:8px"><button class="mini" type="button" onclick="traiterEvenement(0,true)">Tout marquer comme vu</button></div>`;
+  } else ev.style.display = "none";
+  $("mc-code").value = c.code || "";
+  $("mc-deployer").disabled = !r.vercel_pret;
+  $("mc-deploiement").textContent = r.vercel_pret ? (c.vercel_projet ? "Projet Vercel : " + c.vercel_projet + " — mettre à jour repose les variables (clé de lecture) et relance un déploiement." : "Aucun site déployé pour ce client.") : "Variables VERCEL_JETON / ARGOS_LECTEUR_URL / SCW_LECTURE_* absentes sur ARGOSAdmin : déploiement automatique indisponible.";
   $("fil").innerHTML = `<a href="#" onclick="allerClients();return false">Clients</a> &nbsp;›&nbsp; ${html(c.nom)}`;
   $("fc-nom").textContent = c.nom;
   $("fc-voyant").className = "voyant grand " + voyantClasse(c);
@@ -601,36 +697,11 @@ function afficherFiche(r){
     cs.appendChild(tr);
   }
 
-  // utilisateurs
-  const cu = $("corps-utilisateurs"); cu.innerHTML = "";
-  $("vide-utilisateurs").style.display = r.utilisateurs.length ? "none" : "block";
-  $("fc-nb-utilisateurs").textContent = r.utilisateurs.length ? r.utilisateurs.length + (r.utilisateurs.length > 1 ? " personnes" : " personne") : "";
-  for(const u of r.utilisateurs){
-    const bloque = u.bloque_jusqua && new Date(u.bloque_jusqua) > new Date();
-    const tr = document.createElement("tr");
-    tr.innerHTML =
-      `<td>${html(u.courriel)}</td>` +
-      `<td class="masque-mobile">${html(u.nom)}</td>` +
-      `<td>${u.role === "responsable" ? "Responsable" : "Lecture"}</td>` +
-      `<td><span class="etat ${bloque ? "suspendu" : (u.active ? "actif" : "")}">${bloque ? "Suspendu jusqu'au " + dateFr(u.bloque_jusqua) : (u.active ? "Activé" : "En attente d'activation")}</span></td>`;
-    cu.appendChild(tr);
-  }
-
-  // journal des connexions
-  const cc = $("corps-connexions"); cc.innerHTML = "";
-  $("vide-connexions").style.display = r.connexions.length ? "none" : "block";
-  for(const x of r.connexions){
-    const personne = x.utilisateur_nom || x.utilisateur_courriel || x.courriel_saisi || "—";
-    const res = x.resultat === "ok" ? "Réussie" : x.resultat === "bloque" ? "Bloquée" : "Échouée";
-    const tr = document.createElement("tr");
-    tr.innerHTML =
-      `<td>${dateFr(x.horodatage)}</td>` +
-      `<td>${html(personne)}</td>` +
-      `<td class="masque-mobile">${html(x.appareil || "—")}</td>` +
-      `<td><span class="etat ${x.resultat}">${res}</span></td>` +
-      `<td class="num">${x.telechargements}</td>`;
-    cc.appendChild(tr);
-  }
+  // utilisateurs (lot 3)
+  afficherUtilisateurs(r);
+  // journal des connexions (lot 3)
+  const sel = $("fj-personne"); const valeur = sel.value; sel.innerHTML = `<option value="">Toutes</option>` + r.utilisateurs.map(u => `<option value="${u.id}">${html(u.prenom + " " + u.nom)}</option>`).join(""); sel.value = valeur;
+  chargerJournal();
 }
 function rendreCle(){
   const cle = clientCourant ? clientCourant.client.cle_lecture : "";
@@ -654,7 +725,7 @@ async function enregistrerClient(){
   try{
     await api("client_modifier", {
       id: clientCourant.client.id,
-      nom: $("mc-nom").value, url_site: $("mc-url").value,
+      nom: $("mc-nom").value, url_site: $("mc-url").value, code: $("mc-code").value,
       seuil_jour: $("mc-seuil-jour").value, seuil_vitesse: $("mc-seuil-vitesse").value
     });
     message("Enregistré.");
@@ -692,6 +763,161 @@ async function supprimerSite(id){
   catch(e){ message(e.message); }
 }
 
+// ---------- LOT 3 : utilisateurs, liens, appareils, journal, événements, déploiement ----------
+const NATURES = { courriel_non_envoye: "Courriel non envoyé (à transmettre à la main)", nouvel_appareil: "Nouvel appareil", coupure_responsable: "Accès coupé par le responsable",
+  telechargement_massif: "Téléchargement massif (refus temporaire)", sauvegarde_echec: "Copie de sauvegarde absente", suspension: "Suspension 48 h" };
+const RESULTATS = { ok: "Réussie", echec: "Échouée", bloque: "Bloquée", nouvel_appareil: "Nouvel appareil", coupure_responsable: "Accès coupé", reinitialisation: "Réinitialisation",
+  activation: "Activation", code_echec: "Code incorrect", suspension: "Suspension" };
+function libelleNature(n){ return NATURES[n] || n; }
+function etatUtilisateur(u){
+  if(u.coupe_par_responsable) return ["coupe", "Coupé par le responsable le " + dateCourte(u.coupe_par_responsable)];
+  if(u.suspendu_le) return ["suspendu", "Suspendu le " + dateCourte(u.suspendu_le)];
+  if(u.bloque_jusqua && new Date(u.bloque_jusqua) > new Date()) return ["suspendu", "Suspendu 48 h jusqu'au " + dateFr(u.bloque_jusqua)];
+  if(!u.active_le) return ["attente", u.activation_expire && new Date(u.activation_expire) > new Date() ? "En attente d'activation (lien valable jusqu'au " + dateFr(u.activation_expire) + ")" : "En attente d'activation (lien expiré)"];
+  return ["actif", "Actif"];
+}
+function afficherUtilisateurs(r){
+  const cu = $("corps-utilisateurs"); cu.innerHTML = "";
+  $("vide-utilisateurs").style.display = r.utilisateurs.length ? "none" : "block";
+  $("fc-nb-utilisateurs").textContent = r.utilisateurs.length ? r.utilisateurs.length + (r.utilisateurs.length > 1 ? " personnes" : " personne") : "";
+  for(const u of r.utilisateurs){
+    const [cls, lib] = etatUtilisateur(u);
+    const bloque = cls === "suspendu" || cls === "coupe";
+    const appareils = (u.appareils || []).map(a => `<span class="puce-app" title="Vu le ${dateFr(a.vu_le)}">${html(a.libelle)}${a.type === "telephone" ? " 📱" : ""}<button type="button" title="Retirer cet appareil" onclick="retirerAppareil(${a.id})">✕</button></span>`).join("") || "<span class='petit'>—</span>";
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td><strong>${html(u.prenom + " " + u.nom)}</strong><div class="petit">${html(u.courriel)}</div></td>` +
+      `<td>${u.role === "responsable" ? "Responsable" : "Lecture"}${u.sites_exclus && u.sites_exclus.length ? `<div class="petit">${u.sites_exclus.length} site${u.sites_exclus.length > 1 ? "s" : ""} exclu${u.sites_exclus.length > 1 ? "s" : ""}</div>` : ""}</td>` +
+      `<td><span class="etat ${cls}">${html(lib)}</span></td>` +
+      `<td class="masque-mobile">${u.derniere_connexion ? dateFr(u.derniere_connexion) : "—"}</td>` +
+      `<td class="masque-mobile">${appareils}</td>` +
+      `<td style="white-space:nowrap">` +
+        (!u.active_le ? `<button class="mini" type="button" onclick="lienUtilisateur(${u.id},'activation')">Renvoyer le lien</button>` :
+          `<button class="mini" type="button" onclick="lienUtilisateur(${u.id},'code')">Réinitialiser le code</button><button class="mini" type="button" onclick="lienUtilisateur(${u.id},'mdp')">Nouveau mot de passe</button>`) +
+        `<button class="mini" type="button" onclick="ouvrirFormUtilisateur(${u.id})">Modifier</button>` +
+        (bloque ? `<button class="mini" type="button" onclick="suspendreUtilisateur(${u.id},false)">Rétablir</button>` : `<button class="mini rouge" type="button" onclick="suspendreUtilisateur(${u.id},true)">Suspendre</button>`) +
+        (!u.active_le ? `<button class="mini rouge" type="button" onclick="supprimerUtilisateur(${u.id})">Supprimer</button>` : "") +
+      `</td>`;
+    cu.appendChild(tr);
+  }
+}
+function ouvrirFormUtilisateur(id){
+  const u = id ? clientCourant.utilisateurs.find(x => x.id === id) : null;
+  $("fu-id").value = u ? u.id : "";
+  $("fu-nom").value = u ? u.nom : ""; $("fu-prenom").value = u ? u.prenom : ""; $("fu-courriel").value = u ? u.courriel : "";
+  $("fu-courriel").disabled = !!u;
+  $("fu-responsable").checked = u ? u.role === "responsable" : false;
+  const exclus = u ? (u.sites_exclus || []) : [];
+  $("fu-sites").innerHTML = clientCourant.sites.length ? clientCourant.sites.map(s => `<label><input type="checkbox" class="fu-site" value="${s.id}" ${exclus.includes(s.id) ? "" : "checked"}> ${html(libelleSite(s))}</label>`).join("") : "<span class='petit'>Aucun site pour l'instant : les sites créés plus tard seront accessibles d'office.</span>";
+  $("fu-btn").textContent = u ? "Enregistrer" : "Créer et préparer le lien d'activation";
+  $("fu-lien").innerHTML = ""; $("erreur-utilisateur").textContent = "";
+  basculer("form-utilisateur", true);
+}
+function sitesExclusChoisis(){ return Array.from(document.querySelectorAll(".fu-site")).filter(c => !c.checked).map(c => Number(c.value)); }
+function montrerLien(r){
+  $("fu-lien").innerHTML = `<div class="lien-copie"><span>${r.envoye ? "Lien envoyé par courriel. Copie :" : "Courriel non configuré : remettez ce lien à la personne (valable quarante-huit heures, un seul usage) :"}</span>` +
+    `<code>${html(r.lien)}</code><button class="btn second" type="button" onclick="navigator.clipboard.writeText('${html(r.lien)}').then(()=>message('Lien copié.'))">Copier</button></div>`;
+}
+async function enregistrerUtilisateur(){
+  $("erreur-utilisateur").textContent = "";
+  const id = Number($("fu-id").value) || 0;
+  const p = { nom: $("fu-nom").value, prenom: $("fu-prenom").value, courriel: $("fu-courriel").value, responsable: $("fu-responsable").checked, sites_exclus: sitesExclusChoisis() };
+  try{
+    if(id){ await api("utilisateur_modifier", Object.assign({ id }, p)); message("Enregistré."); ouvrirClient(clientCourant.client.id); }
+    else {
+      const r = await api("utilisateur_creer", Object.assign({ client_id: clientCourant.client.id }, p));
+      message("Utilisateur créé.");
+      const fiche = await api("client", { id: clientCourant.client.id }); clientCourant = fiche; afficherUtilisateurs(fiche);
+      $("fu-btn").textContent = "Créé"; $("fu-btn").disabled = true;
+      montrerLien(r);
+      setTimeout(() => { $("fu-btn").disabled = false; }, 1500);
+    }
+  }catch(e){ $("erreur-utilisateur").textContent = e.message; }
+}
+async function lienUtilisateur(id, objet){
+  const libelle = objet === "activation" ? "Renvoyer un lien d'activation" : objet === "code" ? "Envoyer un lien pour choisir un nouveau code secret" : "Envoyer un lien pour choisir un nouveau mot de passe";
+  if(!confirm(libelle + " ? Le lien précédent sera annulé.")) return;
+  try{
+    const r = await api("utilisateur_lien", { id, objet });
+    basculer("form-utilisateur", true); $("fu-id").value = id;
+    const u = clientCourant.utilisateurs.find(x => x.id === id); if(u){ $("fu-nom").value = u.nom; $("fu-prenom").value = u.prenom; $("fu-courriel").value = u.courriel; $("fu-courriel").disabled = true; $("fu-responsable").checked = u.role === "responsable"; $("fu-sites").innerHTML = ""; $("fu-btn").textContent = "Enregistrer"; }
+    montrerLien(r);
+    message(r.envoye ? "Lien envoyé." : "Lien prêt à copier.");
+  }catch(e){ message(e.message); }
+}
+async function suspendreUtilisateur(id, suspendre){
+  if(!confirm(suspendre ? "Suspendre cet accès ? Les sessions ouvertes sont fermées." : "Rétablir cet accès ?")) return;
+  try{ await api("utilisateur_suspendre", { id, suspendre }); message(suspendre ? "Accès suspendu." : "Accès rétabli."); ouvrirClient(clientCourant.client.id); }
+  catch(e){ message(e.message); }
+}
+async function supprimerUtilisateur(id){
+  if(!confirm("Supprimer cette personne (jamais activée) ?")) return;
+  try{ await api("utilisateur_supprimer", { id }); message("Supprimé."); ouvrirClient(clientCourant.client.id); }
+  catch(e){ message(e.message); }
+}
+async function retirerAppareil(id){
+  if(!confirm("Retirer cet appareil ? La personne devra se reconnecter avec son mot de passe (et FIDAL Notaires sera prévenu du nouvel appareil).")) return;
+  try{ await api("appareil_retirer", { id }); message("Appareil retiré."); ouvrirClient(clientCourant.client.id); }
+  catch(e){ message(e.message); }
+}
+async function traiterEvenement(id, tous){
+  try{ await api("evenement_traiter", { id, tous: !!tous, client_id: clientCourant.client.id }); ouvrirClient(clientCourant.client.id); }
+  catch(e){ message(e.message); }
+}
+async function deployerClient(){
+  const code = $("mc-code").value.trim();
+  if(!code){ $("erreur-modifier-client").textContent = "Saisissez le nom court (adresse du site)."; return; }
+  if(!confirm(clientCourant.client.vercel_projet ? "Reposer les variables et relancer le déploiement du site client ?" : "Créer le site client « argos-" + code + " » sur Vercel ?")) return;
+  $("mc-deploiement").textContent = "Déploiement en cours (une minute environ)…"; $("mc-deployer").disabled = true;
+  try{
+    const r = await api("client_deployer", { id: clientCourant.client.id, code });
+    message("Site : " + r.url);
+    ouvrirClient(clientCourant.client.id);
+  }catch(e){ $("erreur-modifier-client").textContent = e.message; $("mc-deployer").disabled = false; }
+}
+let journalCourant = { connexions: [], telechargements: [] };
+async function chargerJournal(){
+  if(!clientCourant) return;
+  try{
+    const r = await api("journal", { client_id: clientCourant.client.id, utilisateur_id: $("fj-personne").value || 0, type: $("fj-type").value, depuis: $("fj-depuis").value, jusqua: $("fj-jusqua").value });
+    journalCourant = r;
+    const cc = $("corps-connexions"); cc.innerHTML = "";
+    $("vide-connexions").style.display = r.connexions.length ? "none" : "block";
+    $("fc-nb-connexions").textContent = r.connexions.length ? r.connexions.length + (r.connexions.length >= 500 ? " (500 dernières)" : "") : "";
+    for(const x of r.connexions){
+      const personne = x.utilisateur_nom ? x.utilisateur_prenom + " " + x.utilisateur_nom : (x.courriel_saisi || "—");
+      const cls = ["ok","activation","reinitialisation"].includes(x.resultat) ? "ok" : x.resultat === "nouvel_appareil" ? "attente" : "echec";
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${dateFr(x.horodatage)}</td><td>${html(personne)}</td><td class="masque-mobile">${html(x.appareil || "—")}</td>` +
+        `<td><span class="etat ${cls}">${html(RESULTATS[x.resultat] || x.resultat)}</span>${x.detail ? `<div class="petit">${html(x.detail)}</div>` : ""}</td>`;
+      cc.appendChild(tr);
+    }
+    const ct = $("corps-telechargements"); ct.innerHTML = "";
+    $("vide-telechargements").style.display = r.telechargements.length ? "none" : "block";
+    $("fc-nb-telechargements").textContent = r.telechargements.length ? r.telechargements.length + (r.telechargements.length >= 500 ? " (500 dernières)" : "") : "";
+    for(const t of r.telechargements){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${dateFr(t.horodatage)}</td><td>${html(t.utilisateur_prenom + " " + t.utilisateur_nom)}</td><td>${html(t.nom_fichier)}</td><td class="masque-mobile">${html((t.site || "") + (t.commune ? " · " + t.commune : ""))}</td>`;
+      ct.appendChild(tr);
+    }
+  }catch(e){ message(e.message); }
+}
+function exporterJournal(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const c = clientCourant.client, M = 14; let y = 18;
+  const periode = [$("fj-depuis").value ? "du " + dateCourte($("fj-depuis").value) : "", $("fj-jusqua").value ? "au " + dateCourte($("fj-jusqua").value) : ""].filter(Boolean).join(" ") || "toute la période";
+  doc.setFont("helvetica","bold"); doc.setFontSize(14); doc.text("Journal des connexions — " + c.nom, M, y); y += 7;
+  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.text("FIDAL Notaires · portail ARGOS · " + periode + " · établi le " + dateFr(new Date()), M, y); y += 8;
+  function ligne(cols, gras){ if(y > 282){ doc.addPage(); y = 18; } doc.setFont("helvetica", gras ? "bold" : "normal"); let x = M; cols.forEach(([t, w]) => { doc.text(doc.splitTextToSize(String(t), w - 2)[0] || "", x, y); x += w; }); y += 5.2; }
+  ligne([["Date et heure", 34], ["Personne", 50], ["Appareil", 42], ["Résultat", 56]], true);
+  journalCourant.connexions.forEach(x => ligne([[dateFr(x.horodatage), 34], [x.utilisateur_nom ? x.utilisateur_prenom + " " + x.utilisateur_nom : (x.courriel_saisi || "—"), 50], [x.appareil || "—", 42], [(RESULTATS[x.resultat] || x.resultat) + (x.detail ? " — " + x.detail : ""), 56]]));
+  y += 6; ligne([["Pièces consultées", 100]], true);
+  ligne([["Date et heure", 34], ["Personne", 50], ["Pièce", 60], ["Site", 38]], true);
+  journalCourant.telechargements.forEach(t => ligne([[dateFr(t.horodatage), 34], [t.utilisateur_prenom + " " + t.utilisateur_nom, 50], [t.nom_fichier, 60], [(t.site || "") + (t.commune ? " · " + t.commune : ""), 38]]));
+  doc.save("ARGOS_journal_" + c.nom.replace(/[^A-Za-z0-9]+/g, "-") + "_" + new Date().toISOString().slice(0, 10) + ".pdf");
+}
+
 // ---------- fiche site (lot 2) ----------
 function tailleFr(o){
   if(!o && o !== 0) return "";
@@ -723,7 +949,7 @@ function afficherSite(r){
   $("fs-f-nom").value = s.nom || ""; $("fs-f-adresse").value = s.adresse || "";
   $("fs-f-cp").value = s.code_postal || ""; $("fs-f-commune").value = s.commune || "";
   $("fs-f-surface").value = refs.surface || ""; $("fs-f-cadastre").value = refs.cadastre || "";
-  $("fs-f-titre").value = refs.titre || ""; $("fs-f-designation").value = fiche.designation || "";
+  $("fs-f-titre").value = refs.titre || ""; $("fs-f-designation").value = fiche.designation || ""; $("fs-f-nature").value = fiche.nature || "";
   basculer("form-site", false);
 
   const lignes = [];
@@ -771,7 +997,7 @@ async function enregistrerSite(){
       nom: $("fs-f-nom").value, adresse: $("fs-f-adresse").value,
       code_postal: $("fs-f-cp").value, commune: $("fs-f-commune").value,
       surface: $("fs-f-surface").value, cadastre: $("fs-f-cadastre").value,
-      titre: $("fs-f-titre").value, designation: $("fs-f-designation").value
+      titre: $("fs-f-titre").value, designation: $("fs-f-designation").value, nature: $("fs-f-nature").value
     });
     message("Enregistré.");
     ouvrirSite(siteCourant.site.id);
