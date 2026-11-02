@@ -475,7 +475,7 @@ const actions = {
       FROM argos_site s JOIN argos_client c ON c.id = s.client_id WHERE s.id = ${id}`;
     if (!s.length) throw new Error("Site introuvable.");
     const pieces = await sql`
-      SELECT id, rubrique, nom_fichier, COALESCE(NULLIF(intitule, ''), nom_fichier) AS intitule, type_mime, taille, empreinte, copie_principale, copie_sauvegarde, sauvegarde_le, depose_le
+      SELECT id, rubrique, nom_fichier, COALESCE(NULLIF(intitule, ''), nom_fichier) AS intitule, type_mime, taille, empreinte, copie_principale, copie_sauvegarde, sauvegarde_le, depose_le, est_plan
       FROM argos_piece WHERE site_id = ${id} ORDER BY rubrique, depose_le DESC`;
     return { site: s[0], pieces, rubriques: RUBRIQUES, stockage_pret: stockagePret() };
   },
@@ -489,6 +489,9 @@ const actions = {
     };
     const fiche = { designation: texte(p.designation, 4000), nature: texte(p.nature, 80) };
     const geo = await geocoder(texte(p.adresse, 300), texte(p.code_postal, 10), texte(p.commune, 120));
+    const avant = await sql`SELECT references_, commune, code_postal FROM argos_site WHERE id = ${id}`;
+    const refsChangees = !avant.length || (avant[0].references_ || {}).cadastre !== references_.cadastre
+      || avant[0].commune !== texte(p.commune, 120) || avant[0].code_postal !== texte(p.code_postal, 10);
     await sql`
       UPDATE argos_site
       SET nom = ${texte(p.nom, 160)}, adresse = ${texte(p.adresse, 300)},
@@ -497,7 +500,16 @@ const actions = {
           lat = COALESCE(${geo ? geo.lat : null}, lat), lng = COALESCE(${geo ? geo.lng : null}, lng),
           maj_le = NOW()
       WHERE id = ${id}`;
-    return { ok: true, geolocalise: !!geo };
+    // Références cadastrales ou commune modifiées : l'alerte cadastrale tombe (le prochain contrôle repartira de zéro) et le code INSEE sera relu
+    if (refsChangees) await sql`UPDATE argos_site SET cadastre_alerte_le = NULL, cadastre_alerte_detail = NULL, insee = NULL WHERE id = ${id}`;
+    return { ok: true, geolocalise: !!geo, alerte_levee: refsChangees };
+  },
+
+  // Lever l'alerte cadastrale à la main (après vérification), sans toucher aux références
+  async cadastre_lever_alerte(sql, p) {
+    const id = entier(p.id, 0);
+    await sql`UPDATE argos_site SET cadastre_alerte_le = NULL, cadastre_alerte_detail = NULL WHERE id = ${id}`;
+    return { ok: true };
   },
 
   // Étape 1 du dépôt : le serveur réserve la clé et signe deux adresses d'envoi (principal + sauvegarde)
@@ -530,6 +542,15 @@ const actions = {
 
   // Étape 2 : le navigateur a envoyé le fichier ; on vérifie la présence dans les deux comptes et on enregistre
   async piece_enregistrer(sql, p) {
+    // Plan du site (produit dans PAINT par l'étude) : un seul par site, l'ancien est retiré des deux stockages
+    if (p.est_plan) {
+      const anciens = await sql`SELECT id, cle_objet FROM argos_piece WHERE site_id = ${entier(p.site_id, 0)} AND est_plan = TRUE`;
+      const principal = compteScaleway("principal"), sauvegarde = compteScaleway("sauvegarde");
+      for (const a of anciens) {
+        await Promise.allSettled([principal ? requeteSignee(principal, "DELETE", a.cle_objet) : null, sauvegarde ? requeteSignee(sauvegarde, "DELETE", a.cle_objet) : null]);
+        await sql`DELETE FROM argos_piece WHERE id = ${a.id}`;
+      }
+    }
     const site_id = entier(p.site_id, 0);
     const rubrique = entier(p.rubrique, 0);
     const cle = texte(p.cle_objet, 600);
@@ -540,10 +561,10 @@ const actions = {
     if (!okP) throw new Error("Le fichier n'est pas arrivé dans le compte principal (réponse " + rp.status + ").");
     const ins = await sql`
       INSERT INTO argos_piece (site_id, rubrique, nom_fichier, intitule, type_mime, taille, empreinte, cle_objet,
-                               bucket_principal, bucket_sauvegarde, copie_principale, copie_sauvegarde, sauvegarde_le)
-      VALUES (${site_id}, ${rubrique}, ${texte(p.nom_fichier, 255)}, ${texte(p.intitule, 200) || intituleDepuisNom(p.nom_fichier)}, ${texte(p.type_mime, 120) || "application/pdf"},
+                               bucket_principal, bucket_sauvegarde, copie_principale, copie_sauvegarde, sauvegarde_le, est_plan)
+      VALUES (${site_id}, ${rubrique}, ${texte(p.nom_fichier, 255)}, ${texte(p.intitule, 200) || (p.est_plan ? "Plan du site" : intituleDepuisNom(p.nom_fichier))}, ${texte(p.type_mime, 120) || "application/pdf"},
               ${entier(p.taille, 0)}, ${texte(p.empreinte, 64)}, ${cle},
-              ${principal.bucket}, ${sauvegarde.bucket}, ${okP}, ${okS}, ${okS ? new Date() : null})
+              ${principal.bucket}, ${sauvegarde.bucket}, ${okP}, ${okS}, ${okS ? new Date() : null}, ${!!p.est_plan})
       RETURNING id`;
     await sql`UPDATE argos_site SET maj_le = NOW() WHERE id = ${site_id}`;
     if (!okS) {
