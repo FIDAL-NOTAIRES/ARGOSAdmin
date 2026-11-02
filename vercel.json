@@ -1,4 +1,10 @@
 {
+  "crons": [
+    { "path": "/api/ronde", "schedule": "0 3 * * *" }
+  ],
+  "functions": {
+    "api/ronde.js": { "maxDuration": 60 }
+  },
   "headers": [
     {
       "source": "/(.*)",
