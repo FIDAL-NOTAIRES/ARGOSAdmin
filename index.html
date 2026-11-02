@@ -149,6 +149,14 @@
   .case li .intitule:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--canard);background:#fff}
   .case li .ouvrir{border:0;background:transparent;color:var(--canard);font-size:13px;padding:2px 6px}
   .case li .ouvrir:hover{text-decoration:underline}
+  .plan-site{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .plan-site .apercu{width:260px;max-width:100%;border:1px solid var(--trait);border-radius:8px;background:#fff;padding:6px;display:flex;align-items:center;justify-content:center;min-height:120px}
+  .plan-site .apercu img{max-width:100%;max-height:220px;display:block}
+  .plan-site .apercu .vide-plan{color:var(--gris);font-size:13px;text-align:center;padding:20px 10px}
+  .plan-site .cote{flex:1;min-width:240px}
+  .plan-site .zone{margin:8px 0 10px}
+  .avert.cadastre{background:#FBEDF1;border:1px solid #F0C3D0;color:var(--carmin)}
+  .avert.cadastre .petit{color:var(--carmin);opacity:.85}
   .resultat-stockage{display:none;border-radius:8px;padding:10px 14px;font-size:14px;margin:-8px 0 16px;border:1px solid var(--trait)}
   .resultat-stockage.visible{display:block}
   .resultat-stockage.ok{background:#E7F4EC;border-color:#BFE3CF;color:#1F5F3A}
@@ -505,6 +513,24 @@
         </div>
       </div>
       <div class="corps" id="fs-resume"></div>
+    </div>
+
+    <div class="avert cadastre" id="fs-avert-cadastre" style="display:none"></div>
+
+    <!-- Plan du site (02/11) : produit par l'étude dans PAINT, déposé ici, repris dans la fiche de synthèse du client -->
+    <div class="bloc">
+      <div class="titre">
+        <h3>Plan du site</h3>
+        <span class="petit">Plan cadastral colorié (image PNG ou JPEG) repris en page 2 de la fiche de synthèse ; sans plan, la fiche prend un extrait provisoire.</span>
+      </div>
+      <div class="corps plan-site">
+        <div class="apercu" id="fs-plan-apercu"><div class="vide-plan">Aucun plan déposé</div></div>
+        <div class="cote">
+          <div class="zone" id="fs-plan-zone">Glissez le plan ici, ou cliquez pour choisir (remplace le plan actuel)</div>
+          <div class="depots" id="depots-plan"></div>
+          <div id="fs-plan-actions"></div>
+        </div>
+      </div>
     </div>
 
     <div class="cases" id="fs-cases"></div>
@@ -899,7 +925,7 @@ async function supprimerSite(id){
 const NATURES = { courriel_non_envoye: "Courriel non envoyé (à transmettre à la main)", nouvel_appareil: "Nouvel appareil", coupure_responsable: "Accès coupé par le responsable",
   telechargement_massif: "Téléchargement massif (refus temporaire)", sauvegarde_echec: "Copie de sauvegarde absente", suspension: "Suspension 48 h",
   volume_inhabituel: "Volume de consultations inhabituel (alerte simple)", pause_volume: "Pause automatique pour volume", pause_levee: "Pause levée par le responsable",
-  proportion_inhabituelle: "Proportion de consultations inhabituelle (alerte simple)", ronde_echec: "Ronde de nuit en échec" };
+  proportion_inhabituelle: "Proportion de consultations inhabituelle (alerte simple)", ronde_echec: "Ronde de nuit en échec", cadastre_evolue: "Références cadastrales à reprendre (fiche bloquée côté client)" };
 const RESULTATS = { ok: "Réussie", echec: "Échouée", bloque: "Bloquée", nouvel_appareil: "Nouvel appareil", coupure_responsable: "Accès coupé", reinitialisation: "Réinitialisation",
   activation: "Activation", code_echec: "Code incorrect", suspension: "Suspension", pause_volume: "Pause automatique (volume)", pause_levee: "Pause levée" };
 function libelleNature(n){ return NATURES[n] || n; }
@@ -1094,9 +1120,22 @@ function afficherSite(r){
   if(fiche.designation) lignes.push(`<div class="petit" style="margin-top:6px;white-space:pre-line">${html(fiche.designation)}</div>`);
   $("fs-resume").innerHTML = lignes.length ? lignes.join("") : `<span class="info">Aucune coordonnée saisie. Ouvrez « Coordonnées et références » ou déposez la note de désignation.</span>`;
 
+  // Alerte cadastrale (posée par le portail au contrôle à la demande de fiche)
+  const av = $("fs-avert-cadastre");
+  if(s.cadastre_alerte_le){
+    av.style.display = "block";
+    av.innerHTML = `<strong>Références cadastrales à reprendre</strong> — ${html(s.cadastre_alerte_detail || "")}<br>` +
+      `<span class="petit">Signalé le ${dateFr(s.cadastre_alerte_le)}. La fiche de synthèse est bloquée côté client jusqu'à correction. Corrigez les références dans « Coordonnées et références » (l'alerte tombe d'elle-même), ou </span>` +
+      `<a href="#" onclick="leverAlerteCadastre();return false">lever l'alerte sans modifier</a>.`;
+  } else av.style.display = "none";
+
+  // Plan du site
+  const plan = r.pieces.find(p => p.est_plan);
+  afficherPlan(plan, r.stockage_pret);
+
   const cases = $("fs-cases"); cases.innerHTML = "";
   for(const n of [1,2,3,4,5,6]){
-    const pieces = r.pieces.filter(p => p.rubrique === n);
+    const pieces = r.pieces.filter(p => p.rubrique === n && !p.est_plan);
     const div = document.createElement("div");
     div.className = "case";
     div.innerHTML =
@@ -1125,6 +1164,33 @@ function afficherSite(r){
       zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("survol"); deposerFichiers(n, e.dataTransfer.files); };
     }
   }
+}
+async function afficherPlan(plan, stockagePret){
+  const ap = $("fs-plan-apercu"), zone = $("fs-plan-zone"), actions = $("fs-plan-actions");
+  dessinerDepots("plan");
+  if(plan){
+    ap.innerHTML = `<div class="vide-plan">Chargement…</div>`;
+    actions.innerHTML = `<span class="petit">${html(plan.intitule || plan.nom_fichier)} · ${tailleFr(plan.taille)} · déposé le ${dateCourte(plan.depose_le)}</span> ` +
+      `<button type="button" class="mini" onclick="ouvrirPiece(${plan.id})">Ouvrir</button> <button type="button" class="mini rouge" onclick="supprimerPiece(${plan.id}, 'Plan du site')">Retirer</button>`;
+    try{ const r = await api("piece_lien", { id: plan.id }); ap.innerHTML = `<img src="${r.url}" alt="Plan du site">`; }
+    catch(e){ ap.innerHTML = `<div class="vide-plan">Aperçu indisponible</div>`; }
+  } else {
+    ap.innerHTML = `<div class="vide-plan">Aucun plan déposé<br><span class="petit">La fiche du client prend un extrait provisoire.</span></div>`;
+    actions.innerHTML = "";
+  }
+  zone.classList.toggle("inactif", !stockagePret);
+  zone.textContent = stockagePret ? (plan ? "Glissez un nouveau plan ici pour remplacer l'actuel, ou cliquez pour choisir" : "Glissez le plan ici, ou cliquez pour choisir") : "Dépôt inactif : stockage non configuré";
+  if(stockagePret){
+    zone.onclick = () => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/png,image/jpeg"; inp.onchange = () => deposerFichiers(1, inp.files, true); inp.click(); };
+    zone.ondragover = (e) => { e.preventDefault(); zone.classList.add("survol"); };
+    zone.ondragleave = () => zone.classList.remove("survol");
+    zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("survol"); deposerFichiers(1, e.dataTransfer.files, true); };
+  } else { zone.onclick = zone.ondrop = zone.ondragover = null; }
+}
+async function leverAlerteCadastre(){
+  if(!confirm("Lever l'alerte cadastrale sans modifier les références ? La fiche de synthèse redeviendra disponible côté client (jusqu'au prochain contrôle).")) return;
+  try{ await api("cadastre_lever_alerte", { id: siteCourant.site.id }); const r = await api("site", { id: siteCourant.site.id }); siteCourant = r; afficherSite(r); message("Alerte levée."); }
+  catch(e){ message(e.message); }
 }
 async function enregistrerSite(){
   $("erreur-site").textContent = "";
@@ -1169,6 +1235,7 @@ function libelleEtat(d){
 }
 function dessinerDepots(rubrique){
   const conteneur = $("depots-" + rubrique); if(!conteneur) return;
+  // rubrique : 1 à 6 ou "plan" (clé du conteneur)
   const liste = depots[rubrique] || [];
   conteneur.classList.toggle("visible", liste.length > 0);
   conteneur.innerHTML = liste.map(d => {
@@ -1179,7 +1246,7 @@ function dessinerDepots(rubrique){
     else if(d.etat === "echec") bas = `<div class="motif">${html(d.motif || "Motif inconnu")} <a href="#" onclick="reprendreDepot(${d.id});return false">Réessayer</a></div>`;
     else if(d.etat === "doublon") bas = `<div class="motif doublon">Ce fichier est identique à « ${html(d.doublon.intitule)} », déjà déposé en rubrique ${d.doublon.rubrique} (${html(d.doublon.libelle_rubrique || "")}) le ${dateCourte(d.doublon.depose_le)}. Il n'a pas été redéposé. <a href="#" onclick="reprendreDepot(${d.id}, true);return false">Déposer quand même</a></div>`;
     return `<div class="depot"><div class="ligne1"><span class="nom" title="${html(d.nom)}">${html(d.intitule || d.nom)}</span><span class="badge ${cl}">${lib}</span>` +
-           (enCours ? "" : `<button type="button" class="fermer" title="Masquer cette ligne" onclick="fermerDepot(${rubrique}, ${d.id})">×</button>`) +
+           (enCours ? "" : `<button type="button" class="fermer" title="Masquer cette ligne" onclick="fermerDepot('${rubrique}', ${d.id})">×</button>`) +
            `</div>${bas}</div>`;
   }).join("");
 }
@@ -1193,7 +1260,7 @@ function trouverDepot(id){
 }
 function majDepot(d, etat, extra){
   d.etat = etat; Object.assign(d, extra || {});
-  dessinerDepots(d.rubrique);
+  dessinerDepots(d.conteneur);
 }
 // Envoi direct vers le stockage avec progression (XMLHttpRequest : seul moyen d'avoir le pourcentage d'envoi)
 function envoyerVers(url, fichier, surProgression){
@@ -1213,31 +1280,34 @@ async function deposerUn(d){
   try{
     majDepot(d, "preparation");
     if(!d.empreinte) d.empreinte = await empreinteSha256(f);
+    if(d.est_plan && !/^image\/(png|jpeg)$/.test(f.type)) throw new Error("Le plan du site doit être une image PNG ou JPEG (export de PAINT).");
     const prep = await api("piece_preparer", { site_id: siteCourant.site.id, rubrique: d.rubrique, nom_fichier: f.name, empreinte: d.empreinte, forcer: !!d.forcer });
     if(prep.doublon){ majDepot(d, "doublon", { doublon: prep.doublon }); return; }
     majDepot(d, "principal", { pct: 0 });
-    await envoyerVers(prep.envoi_principal, f, pct => { d.pct = pct; dessinerDepots(d.rubrique); });
+    await envoyerVers(prep.envoi_principal, f, pct => { d.pct = pct; dessinerDepots(d.conteneur); });
     majDepot(d, "sauvegarde", { pct: 0 });
     let sauvegardeOk = true;
-    try{ await envoyerVers(prep.envoi_sauvegarde, f, pct => { d.pct = pct; dessinerDepots(d.rubrique); }); }catch(e){ sauvegardeOk = false; console.warn("sauvegarde", e); }
+    try{ await envoyerVers(prep.envoi_sauvegarde, f, pct => { d.pct = pct; dessinerDepots(d.conteneur); }); }catch(e){ sauvegardeOk = false; console.warn("sauvegarde", e); }
     majDepot(d, "enregistrement");
     const r = await api("piece_enregistrer", {
       site_id: siteCourant.site.id, rubrique: d.rubrique, cle_objet: prep.cle_objet,
-      nom_fichier: f.name, intitule: d.intitule, type_mime: f.type, taille: f.size, empreinte: d.empreinte
+      nom_fichier: f.name, intitule: d.est_plan ? "Plan du site" : d.intitule, type_mime: f.type, taille: f.size, empreinte: d.empreinte, est_plan: !!d.est_plan
     });
     majDepot(d, (r.copie_sauvegarde && sauvegardeOk) ? "ok" : "partiel");
   }catch(e){
     majDepot(d, "echec", { motif: e.message });
   }
 }
-async function deposerFichiers(rubrique, fichiers){
-  const liste = Array.from(fichiers || []);
+async function deposerFichiers(rubrique, fichiers, estPlan){
+  let liste = Array.from(fichiers || []);
   if(!liste.length) return;
-  // on retire les lignes terminées de la rubrique pour ne garder que l'actualité
-  depots[rubrique] = (depots[rubrique] || []).filter(d => !["ok","partiel"].includes(d.etat));
-  const nouveaux = liste.map(f => ({ id: ++compteurDepot, rubrique, nom: f.name, intitule: intituleDepuisNom(f.name), fichier: f, etat: "attente", pct: 0 }));
-  depots[rubrique].push(...nouveaux);
-  dessinerDepots(rubrique);
+  if(estPlan) liste = liste.slice(0, 1);   // un seul plan par site
+  const conteneur = estPlan ? "plan" : rubrique;
+  // on retire les lignes terminées pour ne garder que l'actualité
+  depots[conteneur] = (depots[conteneur] || []).filter(d => !["ok","partiel"].includes(d.etat));
+  const nouveaux = liste.map(f => ({ id: ++compteurDepot, rubrique, conteneur, est_plan: !!estPlan, nom: f.name, intitule: estPlan ? "Plan du site" : intituleDepuisNom(f.name), fichier: f, etat: "attente", pct: 0 }));
+  depots[conteneur].push(...nouveaux);
+  dessinerDepots(conteneur);
   for(const d of nouveaux) await deposerUn(d);
   const site = siteCourant;
   const r = await api("site", { id: site.site.id }).catch(() => null);
