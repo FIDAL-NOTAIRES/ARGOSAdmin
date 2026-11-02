@@ -494,6 +494,8 @@ const actions = {
       cadastre: texte(p.cadastre, 600),
       surface: texte(p.surface, 60),
       titre: texte(p.titre, 300),
+      // date d'entrée dans le patrimoine (AAAA-MM-JJ), reprise dans les caractéristiques de la fiche de synthèse
+      entree: /^\d{4}-\d{2}-\d{2}$/.test(String(p.entree || "")) ? String(p.entree) : "",
     };
     const fiche = { designation: texte(p.designation, 4000), nature: texte(p.nature, 80) };
     const geo = await geocoder(texte(p.adresse, 300), texte(p.code_postal, 10), texte(p.commune, 120));
