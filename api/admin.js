@@ -481,6 +481,13 @@ const actions = {
     return { site: s[0], pieces, rubriques: RUBRIQUES, stockage_pret: stockagePret() };
   },
 
+  // Rubrique « Organisation de l'immeuble / de la zone » : case à cocher par site pour l'afficher au client même sans document
+  async site_organisation(sql, p) {
+    const id = entier(p.id, 0);
+    await sql`UPDATE argos_site SET organisation_visible = ${!!p.visible}, maj_le = NOW() WHERE id = ${id}`;
+    return { ok: true };
+  },
+
   async site_modifier(sql, p) {
     const id = entier(p.id, 0);
     const references_ = {
