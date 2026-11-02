@@ -172,6 +172,12 @@ async function requeteSignee(compte, methode, cle, options = {}) {
     method: methode, headers: envoi, body: options.corps,
   });
 }
+// Intitulé lisible proposé à partir du nom de fichier : sans extension, soulignés et tirets en espaces, majuscule initiale
+function intituleDepuisNom(nom) {
+  let s = String(nom || "").replace(/\.[A-Za-z0-9]{1,5}$/, "").replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!s) s = "Pièce";
+  return (s.charAt(0).toUpperCase() + s.slice(1)).slice(0, 200);
+}
 function nomFichierPropre(nom) {
   return String(nom || "piece").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120) || "piece";
@@ -408,7 +414,7 @@ const actions = {
       FROM argos_site s JOIN argos_client c ON c.id = s.client_id WHERE s.id = ${id}`;
     if (!s.length) throw new Error("Site introuvable.");
     const pieces = await sql`
-      SELECT id, rubrique, nom_fichier, type_mime, taille, empreinte, copie_principale, copie_sauvegarde, sauvegarde_le, depose_le
+      SELECT id, rubrique, nom_fichier, COALESCE(NULLIF(intitule, ''), nom_fichier) AS intitule, type_mime, taille, empreinte, copie_principale, copie_sauvegarde, sauvegarde_le, depose_le
       FROM argos_piece WHERE site_id = ${id} ORDER BY rubrique, depose_le DESC`;
     return { site: s[0], pieces, rubriques: RUBRIQUES, stockage_pret: stockagePret() };
   },
@@ -441,6 +447,14 @@ const actions = {
     if (!RUBRIQUES[rubrique]) throw new Error("Rubrique inconnue.");
     const s = await sql`SELECT id, client_id FROM argos_site WHERE id = ${site_id}`;
     if (!s.length) throw new Error("Site introuvable.");
+    // Doublon : même empreinte SHA-256 déjà déposée pour ce site (toutes rubriques), sauf si l'écran force le dépôt
+    const empreinte = texte(p.empreinte, 64);
+    if (empreinte && !p.forcer) {
+      const d = await sql`
+        SELECT id, rubrique, nom_fichier, COALESCE(NULLIF(intitule, ''), nom_fichier) AS intitule, depose_le
+        FROM argos_piece WHERE site_id = ${site_id} AND empreinte = ${empreinte} ORDER BY depose_le DESC LIMIT 1`;
+      if (d.length) return { doublon: { id: d[0].id, rubrique: d[0].rubrique, libelle_rubrique: RUBRIQUES[d[0].rubrique], intitule: d[0].intitule, depose_le: d[0].depose_le } };
+    }
     const nom = nomFichierPropre(p.nom_fichier);
     const cle = `client-${s[0].client_id}/site-${site_id}/rubrique-${rubrique}/${Date.now()}-${nom}`;
     const principal = compteScaleway("principal"), sauvegarde = compteScaleway("sauvegarde");
@@ -464,9 +478,9 @@ const actions = {
     const okP = rp.ok, okS = rs.ok;
     if (!okP) throw new Error("Le fichier n'est pas arrivé dans le compte principal (réponse " + rp.status + ").");
     const ins = await sql`
-      INSERT INTO argos_piece (site_id, rubrique, nom_fichier, type_mime, taille, empreinte, cle_objet,
+      INSERT INTO argos_piece (site_id, rubrique, nom_fichier, intitule, type_mime, taille, empreinte, cle_objet,
                                bucket_principal, bucket_sauvegarde, copie_principale, copie_sauvegarde, sauvegarde_le)
-      VALUES (${site_id}, ${rubrique}, ${texte(p.nom_fichier, 255)}, ${texte(p.type_mime, 120) || "application/pdf"},
+      VALUES (${site_id}, ${rubrique}, ${texte(p.nom_fichier, 255)}, ${texte(p.intitule, 200) || intituleDepuisNom(p.nom_fichier)}, ${texte(p.type_mime, 120) || "application/pdf"},
               ${entier(p.taille, 0)}, ${texte(p.empreinte, 64)}, ${cle},
               ${principal.bucket}, ${sauvegarde.bucket}, ${okP}, ${okS}, ${okS ? new Date() : null})
       RETURNING id`;
@@ -477,6 +491,17 @@ const actions = {
                 VALUES (${site[0].client_id}, 'sauvegarde_echec', ${"Copie de sauvegarde absente pour " + cle})`;
     }
     return { id: ins[0].id, copie_sauvegarde: okS };
+  },
+
+  // Modification de l'intitulé affiché au client (le nom de fichier d'origine est conservé)
+  async piece_intituler(sql, p) {
+    const id = entier(p.id, 0);
+    const r = await sql`SELECT site_id, nom_fichier FROM argos_piece WHERE id = ${id}`;
+    if (!r.length) throw new Error("Pièce introuvable.");
+    const intitule = texte(p.intitule, 200) || intituleDepuisNom(r[0].nom_fichier);
+    await sql`UPDATE argos_piece SET intitule = ${intitule} WHERE id = ${id}`;
+    await sql`UPDATE argos_site SET maj_le = NOW() WHERE id = ${r[0].site_id}`;
+    return { ok: true, intitule };
   },
 
   // Adresse de lecture signée (5 minutes) pour ouvrir une pièce depuis ARGOSAdmin
@@ -519,6 +544,7 @@ const actions = {
       const compte = compteScaleway(nom);
       const r = await requeteSignee(compte, "PUT", "", { requete: "cors", corps: xml });
       resultats[nom] = r.ok ? "ok" : `${r.status} ${(await r.text()).slice(0, 200)}`;
+      resultats[nom + "_bucket"] = compte.bucket;
     }
     return { origine, resultats };
   },
@@ -615,7 +641,7 @@ const actions = {
         AND (${jusqua}::timestamptz IS NULL OR cx.horodatage <= ${jusqua})
       ORDER BY cx.horodatage DESC LIMIT 500`;
     const telechargements = await sql`
-      SELECT t.id, t.horodatage, u.nom AS utilisateur_nom, u.prenom AS utilisateur_prenom, p.nom_fichier, s.nom AS site, s.commune
+      SELECT t.id, t.horodatage, u.nom AS utilisateur_nom, u.prenom AS utilisateur_prenom, COALESCE(NULLIF(p.intitule, ''), p.nom_fichier) AS nom_fichier, s.nom AS site, s.commune
       FROM argos_telechargement t JOIN argos_utilisateur u ON u.id = t.utilisateur_id
       JOIN argos_piece p ON p.id = t.piece_id JOIN argos_site s ON s.id = p.site_id
       WHERE u.client_id = ${client_id}
