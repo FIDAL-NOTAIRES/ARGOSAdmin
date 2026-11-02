@@ -506,6 +506,8 @@
         <input type="text" id="fs-f-cadastre" placeholder="Section AB n° 123, 124">
         <label for="fs-f-titre">Titre de propriété (acte, date, notaire, publication)</label>
         <input type="text" id="fs-f-titre">
+        <label for="fs-f-entree">Date d'entrée dans le patrimoine (reprise dans les caractéristiques de la fiche de synthèse)</label>
+        <input type="date" id="fs-f-entree" style="max-width:220px">
         <label for="fs-f-designation">Extrait de la désignation (repris en tête de la fiche PDF)</label>
         <textarea id="fs-f-designation"></textarea>
         <div class="erreur" id="erreur-site"></div>
@@ -1112,13 +1114,14 @@ function afficherSite(r){
   $("fs-f-nom").value = s.nom || ""; $("fs-f-adresse").value = s.adresse || "";
   $("fs-f-cp").value = s.code_postal || ""; $("fs-f-commune").value = s.commune || "";
   $("fs-f-surface").value = refs.surface || ""; $("fs-f-cadastre").value = refs.cadastre || "";
-  $("fs-f-titre").value = refs.titre || ""; $("fs-f-designation").value = fiche.designation || ""; $("fs-f-nature").value = fiche.nature || "";
+  $("fs-f-titre").value = refs.titre || ""; $("fs-f-entree").value = refs.entree || ""; $("fs-f-designation").value = fiche.designation || ""; $("fs-f-nature").value = fiche.nature || "";
   basculer("form-site", false);
 
   const lignes = [];
   if(s.adresse || s.code_postal || s.commune) lignes.push(`<div>${html([s.adresse, [s.code_postal, s.commune].filter(Boolean).join(" ")].filter(Boolean).join(" — "))}</div>`);
   if(refs.cadastre) lignes.push(`<div class="petit">Cadastre : ${html(refs.cadastre)}${refs.surface ? " — " + html(refs.surface) : ""}</div>`);
   if(refs.titre) lignes.push(`<div class="petit">Titre : ${html(refs.titre)}</div>`);
+  if(refs.entree) lignes.push(`<div class="petit">Entrée dans le patrimoine : ${html(String(refs.entree).split("-").reverse().join("/"))}</div>`);
   if(fiche.designation) lignes.push(`<div class="petit" style="margin-top:6px;white-space:pre-line">${html(fiche.designation)}</div>`);
   $("fs-resume").innerHTML = lignes.length ? lignes.join("") : `<span class="info">Aucune coordonnée saisie. Ouvrez « Coordonnées et références » ou déposez la note de désignation.</span>`;
 
@@ -1208,7 +1211,7 @@ async function enregistrerSite(){
       nom: $("fs-f-nom").value, adresse: $("fs-f-adresse").value,
       code_postal: $("fs-f-cp").value, commune: $("fs-f-commune").value,
       surface: $("fs-f-surface").value, cadastre: $("fs-f-cadastre").value,
-      titre: $("fs-f-titre").value, designation: $("fs-f-designation").value, nature: $("fs-f-nature").value
+      titre: $("fs-f-titre").value, entree: $("fs-f-entree").value, designation: $("fs-f-designation").value, nature: $("fs-f-nature").value
     });
     message("Enregistré.");
     ouvrirSite(siteCourant.site.id);
