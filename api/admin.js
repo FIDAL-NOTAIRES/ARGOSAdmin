@@ -309,7 +309,7 @@ async function ronde(sql, options = {}) {
       echecs.map((x) => `— ${x.nom} : ${x.detail}`).join("\n") + `\n\nLes voyants correspondants sont passés au rouge dans ARGOSAdmin.\n\nFIDAL Notaires — ARGOSAdmin`);
   }
   // échéances techniques : rappel unique à quinze jours
-  const aRappeler = await sql`SELECT id, libelle, echeance, note FROM argos_echeance WHERE fait_le IS NULL AND rappel_envoye_le IS NULL AND echeance <= CURRENT_DATE + ${JOURS_ALERTE_ECHEANCE} ORDER BY echeance`;
+  const aRappeler = await sql`SELECT id, libelle, echeance, note FROM argos_echeance WHERE fait_le IS NULL AND rappel_envoye_le IS NULL AND echeance <= CURRENT_DATE + ${JOURS_ALERTE_ECHEANCE}::int ORDER BY echeance`;
   let rappels = 0;
   if (aRappeler.length && process.env.ADMIN_COURRIEL) {
     const envoye = await envoyerCourriel(sql, null, [process.env.ADMIN_COURRIEL], `[ARGOSAdmin] Échéance technique dans quinze jours ou moins`,
@@ -336,7 +336,7 @@ const actions = {
       ORDER BY c.nom`;
     const alertes = await sql`SELECT COUNT(*)::int AS n FROM argos_evenement WHERE traite = FALSE`;
     // LOT 4 — échéances techniques à quinze jours ou moins (bandeau rouge)
-    const echeances = await sql`SELECT id, libelle, echeance FROM argos_echeance WHERE fait_le IS NULL AND echeance <= CURRENT_DATE + ${JOURS_ALERTE_ECHEANCE} ORDER BY echeance`;
+    const echeances = await sql`SELECT id, libelle, echeance FROM argos_echeance WHERE fait_le IS NULL AND echeance <= CURRENT_DATE + ${JOURS_ALERTE_ECHEANCE}::int ORDER BY echeance`;
     return { clients: lignes, alertes: alertes[0].n, echeances };
   },
 
