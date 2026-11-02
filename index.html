@@ -200,6 +200,7 @@
   </div>
 </header>
 <div class="bande" id="bande" style="cursor:pointer" onclick="allerClients()"></div>
+<div class="bande" id="bande-echeances" style="cursor:pointer" onclick="allerEcheances()"></div>
 
 <main>
 
@@ -223,6 +224,8 @@
       <h2>Clients</h2>
       <span class="info" id="info-sondage"></span>
       <div class="droite">
+        <button class="btn second" type="button" onclick="allerEcheances()">Échéances techniques</button>
+        <button class="btn second" type="button" id="btn-ronde" onclick="lancerRonde()" title="Lance tout de suite les vérifications de la ronde de nuit (portail, base, pièce test dans les deux stockages)">Ronde</button>
         <button class="btn second" type="button" onclick="chargerClients(true)">Rafraîchir</button>
         <button class="btn" type="button" onclick="basculer('form-nouveau-client')">Créer un client</button>
       </div>
@@ -267,6 +270,39 @@
     </div>
   </section>
 
+  <!-- ===================== ÉCHÉANCES TECHNIQUES (lot 4) ===================== -->
+  <section class="vue" id="vue-echeances">
+    <div class="entete">
+      <h2>Échéances techniques</h2>
+      <span class="info">Clés, jetons, nom de domaine : bandeau rouge et courriel à quinze jours.</span>
+      <div class="droite">
+        <button class="btn" type="button" onclick="$('ec-id').value='';$('ec-btn').textContent='Ajouter';basculer('form-echeance')">Ajouter une échéance</button>
+      </div>
+    </div>
+    <div class="bloc">
+      <div class="formulaire-inline" id="form-echeance">
+        <input type="hidden" id="ec-id">
+        <div class="ligne deux">
+          <div><label for="ec-libelle">Libellé</label><input type="text" id="ec-libelle" placeholder="Clé Scaleway compte principal"></div>
+          <div><label for="ec-date">Date d'échéance</label><input type="date" id="ec-date"></div>
+        </div>
+        <label for="ec-note">Note (quoi faire)</label>
+        <input type="text" id="ec-note" placeholder="Régénérer dans IAM, reposer les variables, redéployer">
+        <div class="erreur" id="erreur-echeance"></div>
+        <div class="actions">
+          <button class="btn" type="button" id="ec-btn" onclick="enregistrerEcheance()">Ajouter</button>
+          <button class="btn second" type="button" onclick="basculer('form-echeance',false)">Annuler</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Élément</th><th>Échéance</th><th>État</th><th style="width:260px"></th></tr></thead>
+        <tbody id="corps-echeances"></tbody>
+      </table>
+      <div class="vide" id="vide-echeances" style="display:none">Aucune échéance enregistrée.</div>
+    </div>
+    <p><a href="#" onclick="allerClients();return false">← Retour à la liste des clients</a></p>
+  </section>
+
   <!-- ===================== FICHE CLIENT ===================== -->
   <section class="vue" id="vue-client">
     <div class="entete">
@@ -302,12 +338,19 @@
             <p class="info" id="mc-deploiement"></p>
           </div>
           <div>
-            <label for="mc-seuil-jour">Plafond de téléchargements par jour et par utilisateur</label>
-            <input type="number" id="mc-seuil-jour" min="1">
+            <label for="mc-seuil-alerte">Alerte simple : pièces ouvertes en une heure (par personne)</label>
+            <input type="number" id="mc-seuil-alerte" min="1">
+            <p class="info" style="margin:4px 0 0">Au-delà : courriel à l'étude et au responsable, sans blocage.</p>
           </div>
           <div>
-            <label for="mc-seuil-vitesse">Seuil de vitesse (pièces en moins de 5 minutes)</label>
-            <input type="number" id="mc-seuil-vitesse" min="1">
+            <label for="mc-seuil-pause">Pause automatique : pièces en une heure</label>
+            <input type="number" id="mc-seuil-pause" min="2">
+            <p class="info" style="margin:4px 0 0">Au-delà : accès mis en pause, rétablissement par le responsable.</p>
+          </div>
+          <div>
+            <label for="mc-seuil-jour">Pause automatique : pièces sur vingt-quatre heures</label>
+            <input type="number" id="mc-seuil-jour" min="2">
+            <p class="info" style="margin:4px 0 0">Le critère de proportion (plus de la moitié des pièces en une semaine) déclenche une alerte simple, non réglable.</p>
           </div>
         </div>
         <label>Clé de lecture donnée au site client</label>
@@ -579,7 +622,7 @@ function deconnecter(silencieux){
   clientCourant = null;
   $("entete-droite").style.display = "none";
   $("fil").textContent = "";
-  $("bande").classList.remove("visible");
+  $("bande").classList.remove("visible"); $("bande-echeances").classList.remove("visible");
   montrerVue("connexion");
   if(!silencieux) message("Déconnecté.");
   else $("erreur-connexion").textContent = "Session expirée, reconnectez-vous.";
@@ -589,6 +632,7 @@ function demarrer(){
   if(!sessionOuverte()){ montrerVue("connexion"); setTimeout(()=>$("mdp").focus(), 50); return; }
   $("entete-droite").style.display = "flex";
   majHorloge(); clearInterval(demarrer._t); demarrer._t = setInterval(majHorloge, 30000);
+  if(location.hash === "#echeances"){ allerEcheances(); return; }
   const ms = location.hash.match(/^#site\/(\d+)$/);
   if(ms){ ouvrirSite(Number(ms[1])); return; }
   const m = location.hash.match(/^#client\/(\d+)$/);
@@ -608,6 +652,7 @@ async function chargerClients(sonder){
     const r = await api("clients");
     afficherClients(r.clients);
     afficherBande(r.alertes);
+    afficherBandeEcheances(r.echeances || []);
     if(sonder && r.clients.some(c => c.url_site)){
       $("info-sondage").textContent = "Vérification des sites clients…";
       try{ await api("sonder"); }catch(e){ console.warn(e); }
@@ -623,6 +668,65 @@ function afficherBande(n){
   const b = $("bande");
   if(n > 0){ b.textContent = n + (n > 1 ? " événements à examiner" : " événement à examiner") + " — ouvrez la fiche du client concerné (pastille rouge)."; b.classList.add("visible"); }
   else b.classList.remove("visible");
+}
+function joursAvant(d){ return Math.ceil((new Date(d + "T00:00:00") - new Date().setHours(0,0,0,0)) / 86400000); }
+function afficherBandeEcheances(liste){
+  const b = $("bande-echeances");
+  if(!liste.length){ b.classList.remove("visible"); return; }
+  b.innerHTML = liste.map(e => { const j = joursAvant(String(e.echeance).slice(0,10)); return `Échéance technique : <strong>${html(e.libelle)}</strong> le ${dateCourte(e.echeance)}${j < 0 ? " (dépassée de " + (-j) + " j)" : j === 0 ? " (aujourd'hui)" : " (dans " + j + " j)"}`; }).join(" · ");
+  b.classList.add("visible");
+}
+async function lancerRonde(){
+  const b = $("btn-ronde"); b.disabled = true; $("info-sondage").textContent = "Ronde en cours : portail, base, pièce test dans les deux stockages…";
+  try{
+    const r = await api("ronde_lancer");
+    const ko = r.clients.filter(c => !c.ok);
+    $("info-sondage").textContent = ko.length ? "Ronde terminée : " + ko.map(c => c.nom + " — " + c.detail).join(" ; ") : "Ronde terminée : tout passe (" + r.clients.length + " client" + (r.clients.length > 1 ? "s" : "") + ", pièce test ouverte dans les deux stockages).";
+    const r2 = await api("clients"); afficherClients(r2.clients); afficherBande(r2.alertes); afficherBandeEcheances(r2.echeances || []);
+  }catch(e){ $("info-sondage").textContent = "Ronde impossible : " + e.message; }
+  b.disabled = false;
+}
+// ---------- LOT 4 — échéances techniques ----------
+function allerEcheances(){ location.hash = "#echeances"; $("fil").innerHTML = `<a href="#" onclick="allerClients();return false">Clients</a> &nbsp;›&nbsp; Échéances techniques`; montrerVue("echeances"); chargerEcheances(); }
+async function chargerEcheances(){
+  try{
+    const r = await api("echeances");
+    const corps = $("corps-echeances"); corps.innerHTML = "";
+    $("vide-echeances").style.display = r.echeances.length ? "none" : "block";
+    for(const e of r.echeances){
+      const d = String(e.echeance).slice(0,10), j = joursAvant(d);
+      const cls = e.fait_le ? "actif" : (j <= r.jours_alerte ? "echec" : "");
+      const lib = e.fait_le ? "Faite le " + dateCourte(e.fait_le) : (j < 0 ? "Dépassée de " + (-j) + " j" : j === 0 ? "Aujourd'hui" : "Dans " + j + " j");
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td><strong>${html(e.libelle)}</strong>${e.note ? `<div class="petit">${html(e.note)}</div>` : ""}</td>` +
+        `<td>${dateCourte(e.echeance)}</td><td><span class="etat ${cls}">${lib}</span>${e.rappel_envoye_le ? `<div class="petit">Rappel envoyé le ${dateCourte(e.rappel_envoye_le)}</div>` : ""}</td>` +
+        `<td style="white-space:nowrap"><button class="mini" type="button" onclick="modifierEcheance(${e.id}, '${html(e.libelle).replace(/'/g,"&#39;")}', '${d}', '${html(e.note || "").replace(/'/g,"&#39;")}')">Modifier</button>` +
+        `<button class="mini" type="button" onclick="faitEcheance(${e.id}, ${e.fait_le ? "false" : "true"})">${e.fait_le ? "Rouvrir" : "Marquer faite"}</button>` +
+        `<button class="mini rouge" type="button" onclick="supprimerEcheance(${e.id})">Supprimer</button></td>`;
+      corps.appendChild(tr);
+    }
+  }catch(e){ message(e.message); }
+}
+function modifierEcheance(id, libelle, date, note){
+  $("ec-id").value = id; $("ec-libelle").value = libelle; $("ec-date").value = date; $("ec-note").value = note; $("ec-btn").textContent = "Enregistrer";
+  basculer("form-echeance", true); $("ec-libelle").focus();
+}
+async function enregistrerEcheance(){
+  $("erreur-echeance").textContent = "";
+  const id = Number($("ec-id").value || 0), p = { libelle: $("ec-libelle").value.trim(), echeance: $("ec-date").value, note: $("ec-note").value.trim() };
+  try{
+    if(id) await api("echeance_modifier", Object.assign({ id }, p)); else await api("echeance_creer", p);
+    $("ec-id").value = ""; $("ec-libelle").value = ""; $("ec-date").value = ""; $("ec-note").value = ""; $("ec-btn").textContent = "Ajouter";
+    basculer("form-echeance", false); message("Enregistré."); chargerEcheances();
+    const r = await api("clients"); afficherBandeEcheances(r.echeances || []);
+  }catch(e){ $("erreur-echeance").textContent = e.message; }
+}
+async function faitEcheance(id, fait){
+  try{ await api("echeance_fait", { id, fait }); chargerEcheances(); const r = await api("clients"); afficherBandeEcheances(r.echeances || []); }catch(e){ message(e.message); }
+}
+async function supprimerEcheance(id){
+  if(!confirm("Supprimer cette échéance ?")) return;
+  try{ await api("echeance_supprimer", { id }); chargerEcheances(); const r = await api("clients"); afficherBandeEcheances(r.echeances || []); }catch(e){ message(e.message); }
 }
 function compareVersion(a, b){ const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number); for(let i=0;i<3;i++){ if((x[i]||0)!==(y[i]||0)) return (x[i]||0)-(y[i]||0); } return 0; }
 function afficherClients(liste){
@@ -700,8 +804,9 @@ function afficherFiche(r){
   // formulaire de modification
   $("mc-nom").value = c.nom;
   $("mc-url").value = c.url_site || "";
-  $("mc-seuil-jour").value = c.seuil_jour;
-  $("mc-seuil-vitesse").value = c.seuil_vitesse;
+  $("mc-seuil-alerte").value = c.seuil_heure_alerte || 20;
+  $("mc-seuil-pause").value = c.seuil_heure_pause || 50;
+  $("mc-seuil-jour").value = c.seuil_jour || 100;
   cleVisible = false; rendreCle();
   basculer("form-modifier-client", false);
   basculer("form-nouveau-site", false);
@@ -753,7 +858,7 @@ async function enregistrerClient(){
     await api("client_modifier", {
       id: clientCourant.client.id,
       nom: $("mc-nom").value, url_site: $("mc-url").value, code: $("mc-code").value,
-      seuil_jour: $("mc-seuil-jour").value, seuil_vitesse: $("mc-seuil-vitesse").value
+      seuil_heure_alerte: $("mc-seuil-alerte").value, seuil_heure_pause: $("mc-seuil-pause").value, seuil_jour: $("mc-seuil-jour").value
     });
     message("Enregistré.");
     ouvrirClient(clientCourant.client.id);
@@ -792,13 +897,16 @@ async function supprimerSite(id){
 
 // ---------- LOT 3 : utilisateurs, liens, appareils, journal, événements, déploiement ----------
 const NATURES = { courriel_non_envoye: "Courriel non envoyé (à transmettre à la main)", nouvel_appareil: "Nouvel appareil", coupure_responsable: "Accès coupé par le responsable",
-  telechargement_massif: "Téléchargement massif (refus temporaire)", sauvegarde_echec: "Copie de sauvegarde absente", suspension: "Suspension 48 h" };
+  telechargement_massif: "Téléchargement massif (refus temporaire)", sauvegarde_echec: "Copie de sauvegarde absente", suspension: "Suspension 48 h",
+  volume_inhabituel: "Volume de consultations inhabituel (alerte simple)", pause_volume: "Pause automatique pour volume", pause_levee: "Pause levée par le responsable",
+  proportion_inhabituelle: "Proportion de consultations inhabituelle (alerte simple)", ronde_echec: "Ronde de nuit en échec" };
 const RESULTATS = { ok: "Réussie", echec: "Échouée", bloque: "Bloquée", nouvel_appareil: "Nouvel appareil", coupure_responsable: "Accès coupé", reinitialisation: "Réinitialisation",
-  activation: "Activation", code_echec: "Code incorrect", suspension: "Suspension" };
+  activation: "Activation", code_echec: "Code incorrect", suspension: "Suspension", pause_volume: "Pause automatique (volume)", pause_levee: "Pause levée" };
 function libelleNature(n){ return NATURES[n] || n; }
 function etatUtilisateur(u){
   if(u.coupe_par_responsable) return ["coupe", "Coupé par le responsable le " + dateCourte(u.coupe_par_responsable)];
   if(u.suspendu_le) return ["suspendu", "Suspendu le " + dateCourte(u.suspendu_le)];
+  if(u.pause_volume) return ["suspendu", "En pause (volume inhabituel) depuis le " + dateFr(u.pause_volume)];
   if(u.bloque_jusqua && new Date(u.bloque_jusqua) > new Date()) return ["suspendu", "Suspendu 48 h jusqu'au " + dateFr(u.bloque_jusqua)];
   if(!u.active_le) return ["attente", u.activation_expire && new Date(u.activation_expire) > new Date() ? "En attente d'activation (lien valable jusqu'au " + dateFr(u.activation_expire) + ")" : "En attente d'activation (lien expiré)"];
   return ["actif", "Actif"];
@@ -1184,6 +1292,7 @@ async function supprimerPiece(id, nom){
 // ---------- démarrage ----------
 window.addEventListener("hashchange", () => {
   if(!sessionOuverte()) return;
+  if(location.hash === "#echeances"){ if(!$("vue-echeances").classList.contains("active")) allerEcheances(); return; }
   const ms = location.hash.match(/^#site\/(\d+)$/);
   if(ms){ if(!siteCourant || siteCourant.site.id !== Number(ms[1])) ouvrirSite(Number(ms[1])); return; }
   const m = location.hash.match(/^#client\/(\d+)$/);
