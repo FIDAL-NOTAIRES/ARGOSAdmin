@@ -111,6 +111,8 @@
   .case .titre{padding:12px 16px;border-bottom:1px solid var(--trait);display:flex;align-items:center;gap:10px}
   .case .titre h3{font-size:17px}
   .case .titre .nb{margin-left:auto;font-size:13px;color:var(--gris)}
+  .case .titre .bascule-org{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--texte);cursor:pointer;font-weight:400}
+  .case .sous-titre-org{padding:6px 16px 0;font-size:12px;color:var(--gris)}
   .case ul{list-style:none;margin:0;padding:0}
   .case li{display:flex;align-items:center;gap:8px;padding:9px 16px;border-bottom:1px solid #EEF1F4;font-size:14px}
   .case li:last-child{border-bottom:0}
@@ -1139,7 +1141,9 @@ function afficherSite(r){
     const div = document.createElement("div");
     div.className = "case";
     div.innerHTML =
-      `<div class="titre"><h3>${html(r.rubriques[n])}</h3><span class="nb">${pieces.length ? pieces.length + (pieces.length > 1 ? " pièces" : " pièce") : ""}</span></div>` +
+      `<div class="titre"><h3>${html(r.rubriques[n])}</h3><span class="nb">${pieces.length ? pieces.length + (pieces.length > 1 ? " pièces" : " pièce") : ""}</span>` +
+      (n === 6 ? `<label class="bascule-org" title="Sans cette case, la rubrique n'apparaît chez le client qu'une fois un document déposé"><input type="checkbox" ${s.organisation_visible ? "checked" : ""} onchange="basculerOrganisation(this.checked)"> Afficher au client</label>` : "") + `</div>` +
+      (n === 6 ? `<div class="sous-titre-org">Rubrique conditionnelle : affichée d'office dès qu'un document y est déposé ; cochez « Afficher au client » pour la montrer même vide.</div>` : "") +
       `<ul>` + pieces.map(p => {
         const copies = p.copie_principale && p.copie_sauvegarde ? ["ok","2 copies"] : p.copie_principale ? ["partiel","sans sauvegarde"] : ["partiel","sauvegarde seule"];
         return `<li><input class="intitule" type="text" value="${html(p.intitule || p.nom_fichier)}" data-id="${p.id}" title="Intitulé vu par le client — modifiez-le puis quittez le champ pour enregistrer. Fichier d'origine : ${html(p.nom_fichier)}" onchange="intitulerPiece(${p.id}, this)" onkeydown="if(event.key==='Enter'){this.blur();}">` +
@@ -1186,6 +1190,10 @@ async function afficherPlan(plan, stockagePret){
     zone.ondragleave = () => zone.classList.remove("survol");
     zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("survol"); deposerFichiers(1, e.dataTransfer.files, true); };
   } else { zone.onclick = zone.ondrop = zone.ondragover = null; }
+}
+async function basculerOrganisation(visible){
+  try{ await api("site_organisation", { id: siteCourant.site.id, visible: !!visible }); siteCourant.site.organisation_visible = !!visible; message(visible ? "Rubrique affichée au client." : "Rubrique masquée tant qu'aucun document n'est déposé."); }
+  catch(e){ message(e.message); }
 }
 async function leverAlerteCadastre(){
   if(!confirm("Lever l'alerte cadastrale sans modifier les références ? La fiche de synthèse redeviendra disponible côté client (jusqu'au prochain contrôle).")) return;
