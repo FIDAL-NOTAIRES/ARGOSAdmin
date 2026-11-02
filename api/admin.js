@@ -29,6 +29,7 @@ const crypto = require("crypto");
 
 const DUREE_SESSION_MS = 8 * 60 * 60 * 1000; // 8 heures
 const DELAI_SONDAGE_MS = 5000;
+const JOURS_ALERTE_ECHEANCE = 15;                     // LOT 4 : bandeau rouge et courriel à quinze jours de l'échéance
 
 // ---------- utilitaires ----------
 function sha256(texte) {
@@ -263,11 +264,68 @@ async function deployerSiteClient(client, code) {
   return { projet: projet.id, nom: projet.name, url: `https://${projet.name}.vercel.app`, deploiement: deploiement.id, etat: deploiement.readyState || deploiement.status };
 }
 
+// ---------- LOT 4 — RONDE DE NUIT (tâche planifiée Vercel, api/ronde.js) ----------
+// Pour chaque client : le portail répond (/api/sante lit la base avec le rôle lecteur), la base répond ici aussi,
+// et la pièce la plus récente du client est ouverte (HEAD) dans les DEUX stockages. Échec → voyant rouge avec motif,
+// événement, courriel du matin à l'étude. Rien si tout passe. Puis rappel des échéances techniques à quinze jours.
+async function ronde(sql, options = {}) {
+  const debut = Date.now();
+  const clients = await sql`SELECT c.id, c.nom, c.url_site FROM argos_client c WHERE c.actif = TRUE ORDER BY c.nom`;
+  const principal = compteScaleway("principal"), sauvegarde = compteScaleway("sauvegarde");
+  const rapport = [];
+  for (const c of clients) {
+    const defauts = [];
+    const s = await sonderUrl(c.url_site);
+    if (s.ok === false) defauts.push(`portail injoignable (${s.message})`);
+    else if (s.ok === null) defauts.push("adresse du portail non renseignée");
+    let piece = null;
+    try {
+      const r = await sql`SELECT p.id, p.cle_objet, p.copie_principale, p.copie_sauvegarde, COALESCE(NULLIF(p.intitule,''), p.nom_fichier) AS intitule
+                          FROM argos_piece p JOIN argos_site s ON s.id = p.site_id WHERE s.client_id = ${c.id} ORDER BY p.depose_le DESC LIMIT 1`;
+      piece = r[0] || null;
+    } catch (e) { defauts.push(`base de données : ${e.message}`); }
+    if (piece) {
+      if (!principal) defauts.push("stockage principal non configuré");
+      else { try { const r = await requeteSignee(principal, "HEAD", piece.cle_objet); if (!r.ok) defauts.push(`pièce test absente du stockage principal (réponse ${r.status})`); } catch (e) { defauts.push(`stockage principal : ${e.message}`); } }
+      if (!sauvegarde) defauts.push("stockage de sauvegarde non configuré");
+      else if (piece.copie_sauvegarde) { try { const r = await requeteSignee(sauvegarde, "HEAD", piece.cle_objet); if (!r.ok) defauts.push(`pièce test absente du stockage de sauvegarde (réponse ${r.status})`); } catch (e) { defauts.push(`stockage de sauvegarde : ${e.message}`); } }
+    }
+    const ok = defauts.length === 0;
+    const detail = ok ? "" : defauts.join(" ; ");
+    if (ok) {
+      await sql`INSERT INTO argos_sondage (client_id, dernier_ok, message, version, ronde_le, ronde_ok, ronde_detail) VALUES (${c.id}, NOW(), '', ${s.version || null}, NOW(), TRUE, '')
+                ON CONFLICT (client_id) DO UPDATE SET dernier_ok = NOW(), message = '', version = COALESCE(${s.version || null}, argos_sondage.version), ronde_le = NOW(), ronde_ok = TRUE, ronde_detail = ''`;
+    } else {
+      await sql`INSERT INTO argos_sondage (client_id, dernier_echec, message, ronde_le, ronde_ok, ronde_detail) VALUES (${c.id}, NOW(), ${"Ronde de nuit : " + detail}, NOW(), FALSE, ${detail})
+                ON CONFLICT (client_id) DO UPDATE SET dernier_echec = NOW(), message = ${"Ronde de nuit : " + detail}, ronde_le = NOW(), ronde_ok = FALSE, ronde_detail = ${detail}`;
+      await sql`INSERT INTO argos_evenement (client_id, nature, detail) VALUES (${c.id}, 'ronde_echec', ${detail})`;
+    }
+    rapport.push({ id: c.id, nom: c.nom, ok, detail, piece: piece ? piece.intitule : null });
+  }
+  const echecs = rapport.filter((x) => !x.ok);
+  if (echecs.length && process.env.ADMIN_COURRIEL) {
+    await envoyerCourriel(sql, null, [process.env.ADMIN_COURRIEL], `[ARGOSAdmin] Ronde de nuit : ${echecs.length} vérification${echecs.length > 1 ? "s" : ""} en échec`,
+      `Bonjour,\n\nLa ronde de nuit d'ARGOS a relevé ${echecs.length} défaut${echecs.length > 1 ? "s" : ""} :\n\n` +
+      echecs.map((x) => `— ${x.nom} : ${x.detail}`).join("\n") + `\n\nLes voyants correspondants sont passés au rouge dans ARGOSAdmin.\n\nFIDAL Notaires — ARGOSAdmin`);
+  }
+  // échéances techniques : rappel unique à quinze jours
+  const aRappeler = await sql`SELECT id, libelle, echeance, note FROM argos_echeance WHERE fait_le IS NULL AND rappel_envoye_le IS NULL AND echeance <= CURRENT_DATE + ${JOURS_ALERTE_ECHEANCE} ORDER BY echeance`;
+  let rappels = 0;
+  if (aRappeler.length && process.env.ADMIN_COURRIEL) {
+    const envoye = await envoyerCourriel(sql, null, [process.env.ADMIN_COURRIEL], `[ARGOSAdmin] Échéance technique dans quinze jours ou moins`,
+      `Bonjour,\n\nÉchéance${aRappeler.length > 1 ? "s" : ""} technique${aRappeler.length > 1 ? "s" : ""} à traiter :\n\n` +
+      aRappeler.map((x) => `— ${x.libelle} : ${new Date(x.echeance).toLocaleDateString("fr-FR")}${x.note ? " (" + x.note + ")" : ""}`).join("\n") +
+      `\n\nLe bandeau rouge d'ARGOSAdmin les signale jusqu'à ce qu'elles soient marquées faites.\n\nFIDAL Notaires — ARGOSAdmin`);
+    if (envoye) { for (const x of aRappeler) await sql`UPDATE argos_echeance SET rappel_envoye_le = NOW() WHERE id = ${x.id}`; rappels = aRappeler.length; }
+  }
+  return { ok: echecs.length === 0, clients: rapport, echeances_rappelees: rappels, duree_ms: Date.now() - debut, manuel: !!options.manuel };
+}
+
 // ---------- actions ----------
 const actions = {
   async clients(sql) {
     const lignes = await sql`
-      SELECT c.id, c.nom, c.actif, c.url_site, c.seuil_jour, c.seuil_vitesse, c.cree_le,
+      SELECT c.id, c.nom, c.actif, c.url_site, c.seuil_jour, c.seuil_vitesse, c.seuil_heure_alerte, c.seuil_heure_pause, c.cree_le,
              (SELECT COUNT(*)::int FROM argos_site s WHERE s.client_id = c.id) AS nb_sites,
              (SELECT COUNT(*)::int FROM argos_utilisateur u WHERE u.client_id = c.id) AS nb_utilisateurs,
              (SELECT MAX(p.depose_le) FROM argos_piece p JOIN argos_site s ON s.id = p.site_id WHERE s.client_id = c.id) AS dernier_depot,
@@ -277,7 +335,9 @@ const actions = {
       LEFT JOIN argos_sondage so ON so.client_id = c.id
       ORDER BY c.nom`;
     const alertes = await sql`SELECT COUNT(*)::int AS n FROM argos_evenement WHERE traite = FALSE`;
-    return { clients: lignes, alertes: alertes[0].n };
+    // LOT 4 — échéances techniques à quinze jours ou moins (bandeau rouge)
+    const echeances = await sql`SELECT id, libelle, echeance FROM argos_echeance WHERE fait_le IS NULL AND echeance <= CURRENT_DATE + ${JOURS_ALERTE_ECHEANCE} ORDER BY echeance`;
+    return { clients: lignes, alertes: alertes[0].n, echeances };
   },
 
   async sonder(sql) {
@@ -332,7 +392,7 @@ const actions = {
       ORDER BY s.commune, s.nom, s.id`;
     const utilisateurs = await sql`
       SELECT u.id, u.courriel, u.nom, u.prenom, u.role, u.active, u.bloque_jusqua, u.cree_le, u.active_le, u.conditions_le, u.suspendu_le,
-             u.coupe_par_responsable, u.derniere_connexion, u.activation_expire, u.activation_objet,
+             u.coupe_par_responsable, u.pause_volume, u.derniere_connexion, u.activation_expire, u.activation_objet,
              (SELECT COALESCE(json_agg(json_build_object('id', a.id, 'libelle', a.libelle, 'type', a.type, 'vu_le', a.vu_le) ORDER BY a.vu_le DESC), '[]'::json) FROM argos_appareil a WHERE a.utilisateur_id = u.id) AS appareils,
              (SELECT COALESCE(json_agg(e.site_id), '[]'::json) FROM argos_site_exclu e WHERE e.utilisateur_id = u.id) AS sites_exclus
       FROM argos_utilisateur u WHERE u.client_id = ${id} ORDER BY u.nom, u.prenom`;
@@ -358,12 +418,13 @@ const actions = {
     const nom = texte(p.nom, 120);
     if (!nom) throw new Error("Le nom du client est obligatoire.");
     const url_site = texte(p.url_site, 300);
-    const seuil_jour = Math.max(1, entier(p.seuil_jour, 30));
-    const seuil_vitesse = Math.max(1, entier(p.seuil_vitesse, 10));
+    const seuil_heure_alerte = Math.max(1, entier(p.seuil_heure_alerte, 20));
+    const seuil_heure_pause = Math.max(seuil_heure_alerte + 1, entier(p.seuil_heure_pause, 50));
+    const seuil_jour = Math.max(seuil_heure_pause, entier(p.seuil_jour, 100));
     const code = texte(p.code, 40).toLowerCase().replace(/[^a-z0-9-]/g, "") || null;
     await sql`
       UPDATE argos_client
-      SET nom = ${nom}, url_site = ${url_site}, code = ${code}, seuil_jour = ${seuil_jour}, seuil_vitesse = ${seuil_vitesse}, maj_le = NOW()
+      SET nom = ${nom}, url_site = ${url_site}, code = ${code}, seuil_heure_alerte = ${seuil_heure_alerte}, seuil_heure_pause = ${seuil_heure_pause}, seuil_jour = ${seuil_jour}, maj_le = NOW()
       WHERE id = ${id}`;
     return { ok: true };
   },
@@ -600,7 +661,7 @@ const actions = {
       await sql`UPDATE argos_session SET revoque_le = NOW() WHERE utilisateur_id = ${id} AND revoque_le IS NULL`;
     } else {
       // rétablissement : lève la suspension manuelle, la coupure du responsable et le blocage 48 h
-      await sql`UPDATE argos_utilisateur SET suspendu_le = NULL, coupe_par_responsable = NULL, bloque_jusqua = NULL, echecs_mdp = 0, echecs_code = 0, maj_le = NOW() WHERE id = ${id}`;
+      await sql`UPDATE argos_utilisateur SET suspendu_le = NULL, coupe_par_responsable = NULL, bloque_jusqua = NULL, pause_volume = NULL, alerte_volume_le = NULL, echecs_mdp = 0, echecs_code = 0, maj_le = NOW() WHERE id = ${id}`;
     }
     const u = await sql`SELECT client_id FROM argos_utilisateur WHERE id = ${id}`;
     if (u.length) await sql`INSERT INTO argos_connexion (client_id, utilisateur_id, resultat, detail) VALUES (${u[0].client_id}, ${id}, ${suspendre ? "suspension" : "reinitialisation"}, ${suspendre ? "Suspendu par FIDAL Notaires" : "Accès rétabli par FIDAL Notaires"})`;
@@ -650,6 +711,39 @@ const actions = {
         AND (${jusqua}::timestamptz IS NULL OR t.horodatage <= ${jusqua})
       ORDER BY t.horodatage DESC LIMIT 500`;
     return { connexions: lignes, telechargements };
+  },
+
+  // ===== LOT 4 (02/11/2026) — échéances techniques =====
+  async echeances(sql) {
+    const lignes = await sql`SELECT id, libelle, echeance, note, fait_le, rappel_envoye_le, cree_le FROM argos_echeance ORDER BY fait_le NULLS FIRST, echeance`;
+    return { echeances: lignes, jours_alerte: JOURS_ALERTE_ECHEANCE };
+  },
+  async echeance_creer(sql, p) {
+    const libelle = texte(p.libelle, 160), echeance = texte(p.echeance, 10), note = texte(p.note, 1000);
+    if (!libelle || !/^\d{4}-\d{2}-\d{2}$/.test(echeance)) throw new Error("Libellé et date (AAAA-MM-JJ) obligatoires.");
+    const r = await sql`INSERT INTO argos_echeance (libelle, echeance, note) VALUES (${libelle}, ${echeance}, ${note || null}) RETURNING id`;
+    return { id: r[0].id };
+  },
+  async echeance_modifier(sql, p) {
+    const id = entier(p.id, 0), libelle = texte(p.libelle, 160), echeance = texte(p.echeance, 10), note = texte(p.note, 1000);
+    if (!libelle || !/^\d{4}-\d{2}-\d{2}$/.test(echeance)) throw new Error("Libellé et date (AAAA-MM-JJ) obligatoires.");
+    // une date repoussée réarme le rappel
+    await sql`UPDATE argos_echeance SET libelle = ${libelle}, echeance = ${echeance}, note = ${note || null},
+              rappel_envoye_le = CASE WHEN echeance <> ${echeance}::date THEN NULL ELSE rappel_envoye_le END WHERE id = ${id}`;
+    return { ok: true };
+  },
+  async echeance_fait(sql, p) {
+    const id = entier(p.id, 0);
+    await sql`UPDATE argos_echeance SET fait_le = ${p.fait ? new Date() : null} WHERE id = ${id}`;
+    return { ok: true };
+  },
+  async echeance_supprimer(sql, p) {
+    await sql`DELETE FROM argos_echeance WHERE id = ${entier(p.id, 0)}`;
+    return { ok: true };
+  },
+  // Lancement manuel de la ronde de nuit depuis l'écran (même code que la tâche planifiée)
+  async ronde_lancer(sql) {
+    return ronde(sql, { manuel: true });
   },
 
   // Événements (bande rouge) : liste et marquage
@@ -746,3 +840,4 @@ module.exports = async (req, res) => {
     return res.end(JSON.stringify({ erreur: e.message || "Erreur serveur" }));
   }
 };
+module.exports.ronde = ronde;
