@@ -126,8 +126,34 @@
   .zone{margin:10px 12px 12px;border:2px dashed #BFCAD6;border-radius:8px;padding:14px;text-align:center;color:var(--gris);font-size:13px;cursor:pointer}
   .zone:hover,.zone.survol{border-color:var(--canard);background:#F2F8F9;color:var(--canard)}
   .zone.inactif{cursor:default;opacity:.6}
-  .progression{margin:0 12px 12px;font-size:13px;color:var(--canard);display:none}
-  .progression.visible{display:block}
+  .depots{margin:0 12px 12px;display:none;flex-direction:column;gap:6px}
+  .depots.visible{display:flex}
+  .depot{border:1px solid var(--trait);border-radius:8px;padding:8px 10px;font-size:13px;background:#fff}
+  .depot .ligne1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .depot .ligne1 .nom{flex:1;min-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .depot .badge{font-size:12px;font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap}
+  .depot .badge.cours{color:var(--canard);background:#E6F3F4}
+  .depot .badge.ok{color:var(--vert);background:#E7F4EC}
+  .depot .badge.echec{color:var(--carmin);background:#FBEDF1}
+  .depot .badge.doublon{color:#7A4A00;background:#FFF6E8}
+  .depot .badge.partiel{color:var(--orange);background:#FFF6E8}
+  .depot .barre{height:6px;background:#EEF1F4;border-radius:3px;margin-top:7px;overflow:hidden}
+  .depot .barre i{display:block;height:100%;width:0;background:var(--canard);transition:width .2s}
+  .depot .motif{margin-top:5px;color:var(--carmin);font-size:12.5px}
+  .depot .motif.doublon{color:#7A4A00}
+  .depot .motif a{color:var(--canard);margin-left:6px}
+  .depot .fermer{border:0;background:none;color:var(--gris);font-size:14px;padding:0 4px;cursor:pointer}
+  .depot .fermer:hover{color:var(--carmin)}
+  .case li .intitule{flex:1;min-width:0;font:inherit;font-size:14px;border:1px solid transparent;border-radius:5px;padding:2px 6px;background:transparent;color:var(--texte)}
+  .case li .intitule:hover{border-color:var(--trait);background:#fff}
+  .case li .intitule:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--canard);background:#fff}
+  .case li .ouvrir{border:0;background:transparent;color:var(--canard);font-size:13px;padding:2px 6px}
+  .case li .ouvrir:hover{text-decoration:underline}
+  .resultat-stockage{display:none;border-radius:8px;padding:10px 14px;font-size:14px;margin:-8px 0 16px;border:1px solid var(--trait)}
+  .resultat-stockage.visible{display:block}
+  .resultat-stockage.ok{background:#E7F4EC;border-color:#BFE3CF;color:#1F5F3A}
+  .resultat-stockage.echec{background:#FBEDF1;border-color:#F0C3D0;color:var(--carmin)}
+  .resultat-stockage.cours{background:#F2F8F9;border-color:#BFCAD6;color:var(--canard)}
   .avert{background:#FFF6E8;border:1px solid #FFD8AE;color:#7A4A00;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:18px}
   .ligne.trois{grid-template-columns:1fr 1fr 1fr}
   textarea{font:inherit;width:100%;padding:9px 11px;border:1px solid var(--trait);border-radius:7px;background:#fff;min-height:90px;resize:vertical}
@@ -402,11 +428,12 @@
       <h2 id="fs-nom"></h2>
       <span class="petit" id="fs-maj"></span>
       <div class="droite">
+        <button class="btn second" type="button" id="fs-btn-autoriser" onclick="configurerStockage()" title="Pose la règle d'autorisation d'envoi direct sur les deux comptes de stockage. À faire une fois par adresse d'ARGOSAdmin, ou si un dépôt est refusé par le navigateur.">Autoriser le dépôt sur les deux comptes</button>
         <button class="btn second" type="button" onclick="basculer('form-site')">Coordonnées et références</button>
       </div>
     </div>
     <div class="avert" id="fs-avert-stockage" style="display:none">Le stockage des pièces n'est pas encore configuré : les six variables SCW_* manquent sur Vercel. Le dépôt sera actif dès qu'elles seront posées.</div>
-    <p class="info" id="fs-stockage-outils" style="display:none;margin:-8px 0 16px">Si un envoi est refusé par le navigateur (blocage d'origine), <a href="#" onclick="configurerStockage();return false">autoriser ARGOSAdmin sur les deux comptes</a> — à faire une seule fois.</p>
+    <div class="resultat-stockage" id="fs-stockage-resultat"></div>
 
     <div class="bloc">
       <div class="formulaire-inline" id="form-site">
@@ -944,7 +971,7 @@ function afficherSite(r){
   $("fs-maj").textContent = "Mis à jour le " + dateFr(s.maj_le);
   $("fs-retour").onclick = () => { ouvrirClient(s.client_id); return false; };
   $("fs-avert-stockage").style.display = r.stockage_pret ? "none" : "block";
-  $("fs-stockage-outils").style.display = r.stockage_pret ? "block" : "none";
+  $("fs-btn-autoriser").style.display = r.stockage_pret ? "" : "none";
 
   $("fs-f-nom").value = s.nom || ""; $("fs-f-adresse").value = s.adresse || "";
   $("fs-f-cp").value = s.code_postal || ""; $("fs-f-commune").value = s.commune || "";
@@ -968,14 +995,16 @@ function afficherSite(r){
       `<div class="titre"><h3>${html(r.rubriques[n])}</h3><span class="nb">${pieces.length ? pieces.length + (pieces.length > 1 ? " pièces" : " pièce") : ""}</span></div>` +
       `<ul>` + pieces.map(p => {
         const copies = p.copie_principale && p.copie_sauvegarde ? ["ok","2 copies"] : p.copie_principale ? ["partiel","sans sauvegarde"] : ["partiel","sauvegarde seule"];
-        return `<li><span class="nom"><a href="#" onclick="ouvrirPiece(${p.id});return false" title="${html(p.nom_fichier)}">${html(p.nom_fichier)}</a></span>` +
+        return `<li><input class="intitule" type="text" value="${html(p.intitule || p.nom_fichier)}" data-id="${p.id}" title="Intitulé vu par le client — modifiez-le puis quittez le champ pour enregistrer. Fichier d'origine : ${html(p.nom_fichier)}" onchange="intitulerPiece(${p.id}, this)" onkeydown="if(event.key==='Enter'){this.blur();}">` +
                `<span class="meta">${tailleFr(p.taille)} · ${dateCourte(p.depose_le)}</span>` +
                `<span class="copies ${copies[0]}">${copies[1]}</span>` +
-               `<button type="button" onclick="supprimerPiece(${p.id}, '${html(p.nom_fichier).replace(/'/g,"&#39;")}')">Retirer</button></li>`;
+               `<button type="button" class="ouvrir" onclick="ouvrirPiece(${p.id})">Ouvrir</button>` +
+               `<button type="button" onclick="supprimerPiece(${p.id}, '${html(p.intitule || p.nom_fichier).replace(/'/g,"&#39;")}')">Retirer</button></li>`;
       }).join("") + `</ul>` +
       `<div class="zone ${r.stockage_pret ? "" : "inactif"}" data-rubrique="${n}">${r.stockage_pret ? "Glissez les fichiers ici, ou cliquez pour choisir" : "Dépôt inactif : stockage non configuré"}</div>` +
-      `<div class="progression" id="prog-${n}"></div>`;
+      `<div class="depots" id="depots-${n}"></div>`;
     cases.appendChild(div);
+    dessinerDepots(n);
     const zone = div.querySelector(".zone");
     if(r.stockage_pret){
       zone.onclick = () => {
@@ -1008,44 +1037,137 @@ async function empreinteSha256(fichier){
   const h = await crypto.subtle.digest("SHA-256", tampon);
   return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
-async function envoyerVers(url, fichier){
-  const rep = await fetch(url, { method: "PUT", body: fichier, headers: { "Content-Type": fichier.type || "application/octet-stream" } });
-  if(!rep.ok) throw new Error("Envoi refusé par le stockage (" + rep.status + ")");
+// ---------- dépôt des pièces : états visibles par fichier ----------
+const depots = {};              // rubrique -> [ { nom, intitule, etat, pct, motif, doublon, fichier, forcer } ]
+let compteurDepot = 0;
+function intituleDepuisNom(nom){
+  let s = String(nom || "").replace(/\.[A-Za-z0-9]{1,5}$/, "").replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim();
+  if(!s) s = "Pièce";
+  return (s.charAt(0).toUpperCase() + s.slice(1)).slice(0, 200);
+}
+function libelleEtat(d){
+  switch(d.etat){
+    case "attente": return ["cours", "En attente"];
+    case "preparation": return ["cours", "Préparation…"];
+    case "principal": return ["cours", `Envoi… ${d.pct}%`];
+    case "sauvegarde": return ["cours", `Copie de sauvegarde… ${d.pct}%`];
+    case "enregistrement": return ["cours", "Enregistrement…"];
+    case "ok": return ["ok", "Déposé — 2 copies"];
+    case "partiel": return ["partiel", "Déposé — sans sauvegarde"];
+    case "doublon": return ["doublon", "Doublon détecté"];
+    case "echec": return ["echec", "Échec"];
+  }
+  return ["cours", d.etat];
+}
+function dessinerDepots(rubrique){
+  const conteneur = $("depots-" + rubrique); if(!conteneur) return;
+  const liste = depots[rubrique] || [];
+  conteneur.classList.toggle("visible", liste.length > 0);
+  conteneur.innerHTML = liste.map(d => {
+    const [cl, lib] = libelleEtat(d);
+    const enCours = ["attente","preparation","principal","sauvegarde","enregistrement"].includes(d.etat);
+    let bas = "";
+    if(enCours) bas = `<div class="barre"><i style="width:${d.etat === "principal" || d.etat === "sauvegarde" ? d.pct : (d.etat === "enregistrement" ? 100 : 3)}%"></i></div>`;
+    else if(d.etat === "echec") bas = `<div class="motif">${html(d.motif || "Motif inconnu")} <a href="#" onclick="reprendreDepot(${d.id});return false">Réessayer</a></div>`;
+    else if(d.etat === "doublon") bas = `<div class="motif doublon">Ce fichier est identique à « ${html(d.doublon.intitule)} », déjà déposé en rubrique ${d.doublon.rubrique} (${html(d.doublon.libelle_rubrique || "")}) le ${dateCourte(d.doublon.depose_le)}. Il n'a pas été redéposé. <a href="#" onclick="reprendreDepot(${d.id}, true);return false">Déposer quand même</a></div>`;
+    return `<div class="depot"><div class="ligne1"><span class="nom" title="${html(d.nom)}">${html(d.intitule || d.nom)}</span><span class="badge ${cl}">${lib}</span>` +
+           (enCours ? "" : `<button type="button" class="fermer" title="Masquer cette ligne" onclick="fermerDepot(${rubrique}, ${d.id})">×</button>`) +
+           `</div>${bas}</div>`;
+  }).join("");
+}
+function fermerDepot(rubrique, id){
+  depots[rubrique] = (depots[rubrique] || []).filter(d => d.id !== id);
+  dessinerDepots(rubrique);
+}
+function trouverDepot(id){
+  for(const r in depots){ const d = depots[r].find(x => x.id === id); if(d) return d; }
+  return null;
+}
+function majDepot(d, etat, extra){
+  d.etat = etat; Object.assign(d, extra || {});
+  dessinerDepots(d.rubrique);
+}
+// Envoi direct vers le stockage avec progression (XMLHttpRequest : seul moyen d'avoir le pourcentage d'envoi)
+function envoyerVers(url, fichier, surProgression){
+  return new Promise((ok, ko) => {
+    const x = new XMLHttpRequest();
+    x.open("PUT", url, true);
+    x.setRequestHeader("Content-Type", fichier.type || "application/octet-stream");
+    x.upload.onprogress = (e) => { if(e.lengthComputable && surProgression) surProgression(Math.round(e.loaded * 100 / e.total)); };
+    x.onload = () => { if(x.status >= 200 && x.status < 300) ok(); else ko(new Error("Envoi refusé par le stockage (" + x.status + ")")); };
+    x.onerror = () => ko(new Error("Envoi bloqué par le navigateur (règle d'autorisation absente ?) — cliquez « Autoriser le dépôt sur les deux comptes » puis réessayez."));
+    x.ontimeout = () => ko(new Error("Délai d'envoi dépassé."));
+    x.send(fichier);
+  });
+}
+async function deposerUn(d){
+  const f = d.fichier;
+  try{
+    majDepot(d, "preparation");
+    if(!d.empreinte) d.empreinte = await empreinteSha256(f);
+    const prep = await api("piece_preparer", { site_id: siteCourant.site.id, rubrique: d.rubrique, nom_fichier: f.name, empreinte: d.empreinte, forcer: !!d.forcer });
+    if(prep.doublon){ majDepot(d, "doublon", { doublon: prep.doublon }); return; }
+    majDepot(d, "principal", { pct: 0 });
+    await envoyerVers(prep.envoi_principal, f, pct => { d.pct = pct; dessinerDepots(d.rubrique); });
+    majDepot(d, "sauvegarde", { pct: 0 });
+    let sauvegardeOk = true;
+    try{ await envoyerVers(prep.envoi_sauvegarde, f, pct => { d.pct = pct; dessinerDepots(d.rubrique); }); }catch(e){ sauvegardeOk = false; console.warn("sauvegarde", e); }
+    majDepot(d, "enregistrement");
+    const r = await api("piece_enregistrer", {
+      site_id: siteCourant.site.id, rubrique: d.rubrique, cle_objet: prep.cle_objet,
+      nom_fichier: f.name, intitule: d.intitule, type_mime: f.type, taille: f.size, empreinte: d.empreinte
+    });
+    majDepot(d, (r.copie_sauvegarde && sauvegardeOk) ? "ok" : "partiel");
+  }catch(e){
+    majDepot(d, "echec", { motif: e.message });
+  }
 }
 async function deposerFichiers(rubrique, fichiers){
   const liste = Array.from(fichiers || []);
   if(!liste.length) return;
-  const prog = $("prog-" + rubrique); prog.classList.add("visible");
-  let n = 0;
-  for(const f of liste){
-    n++;
-    try{
-      prog.textContent = `${f.name} (${n}/${liste.length}) : préparation…`;
-      const empreinte = await empreinteSha256(f);
-      const prep = await api("piece_preparer", { site_id: siteCourant.site.id, rubrique, nom_fichier: f.name });
-      prog.textContent = `${f.name} (${n}/${liste.length}) : envoi vers le compte principal…`;
-      await envoyerVers(prep.envoi_principal, f);
-      prog.textContent = `${f.name} (${n}/${liste.length}) : copie de sauvegarde…`;
-      let sauvegardeOk = true;
-      try{ await envoyerVers(prep.envoi_sauvegarde, f); }catch(e){ sauvegardeOk = false; console.warn("sauvegarde", e); }
-      prog.textContent = `${f.name} (${n}/${liste.length}) : enregistrement…`;
-      const r = await api("piece_enregistrer", {
-        site_id: siteCourant.site.id, rubrique, cle_objet: prep.cle_objet,
-        nom_fichier: f.name, type_mime: f.type, taille: f.size, empreinte
-      });
-      if(!r.copie_sauvegarde || !sauvegardeOk) message(f.name + " : déposé, mais la copie de sauvegarde a échoué (signalé).");
-    }catch(e){
-      message(f.name + " : " + e.message);
-    }
-  }
-  prog.classList.remove("visible"); prog.textContent = "";
-  ouvrirSite(siteCourant.site.id);
+  // on retire les lignes terminées de la rubrique pour ne garder que l'actualité
+  depots[rubrique] = (depots[rubrique] || []).filter(d => !["ok","partiel"].includes(d.etat));
+  const nouveaux = liste.map(f => ({ id: ++compteurDepot, rubrique, nom: f.name, intitule: intituleDepuisNom(f.name), fichier: f, etat: "attente", pct: 0 }));
+  depots[rubrique].push(...nouveaux);
+  dessinerDepots(rubrique);
+  for(const d of nouveaux) await deposerUn(d);
+  const site = siteCourant;
+  const r = await api("site", { id: site.site.id }).catch(() => null);
+  if(r && siteCourant && siteCourant.site.id === r.site.id){ siteCourant = r; afficherSite(r); }
+}
+async function reprendreDepot(id, forcer){
+  const d = trouverDepot(id); if(!d) return;
+  d.forcer = !!forcer;
+  await deposerUn(d);
+  const r = await api("site", { id: siteCourant.site.id }).catch(() => null);
+  if(r){ siteCourant = r; afficherSite(r); }
+}
+async function intitulerPiece(id, champ){
+  const valeur = champ.value.trim();
+  try{
+    const r = await api("piece_intituler", { id, intitule: valeur });
+    champ.value = r.intitule;
+    const p = (siteCourant.pieces || []).find(x => x.id === id); if(p) p.intitule = r.intitule;
+    message("Intitulé enregistré.");
+  }catch(e){ message(e.message); }
 }
 async function configurerStockage(){
+  const bouton = $("fs-btn-autoriser"), boite = $("fs-stockage-resultat");
+  bouton.disabled = true;
+  boite.className = "resultat-stockage visible cours"; boite.textContent = "Pose de la règle d'autorisation sur les deux comptes de stockage…";
   try{
     const r = await api("stockage_configurer", { origine: location.origin });
-    message("Principal : " + r.resultats.principal + " — Sauvegarde : " + r.resultats.sauvegarde);
-  }catch(e){ message(e.message); }
+    const okP = r.resultats.principal === "ok", okS = r.resultats.sauvegarde === "ok";
+    boite.className = "resultat-stockage visible " + (okP && okS ? "ok" : "echec");
+    boite.innerHTML =
+      `<strong>${okP && okS ? "Dépôt autorisé sur les deux comptes." : "Autorisation incomplète."}</strong><br>` +
+      `Compte principal (${html(r.resultats.principal_bucket || "")}) : ${okP ? "ok" : "refusé — " + html(r.resultats.principal)}<br>` +
+      `Compte de sauvegarde (${html(r.resultats.sauvegarde_bucket || "")}) : ${okS ? "ok" : "refusé — " + html(r.resultats.sauvegarde)}` +
+      (okP && okS ? "" : `<br><span class="petit">Un refus 403 vient de la clé posée dans Vercel (droits ou projet) ; un 404 d'un nom de bucket ou d'une région inexacts.</span>`);
+  }catch(e){
+    boite.className = "resultat-stockage visible echec"; boite.textContent = "Impossible de poser l'autorisation : " + e.message;
+  }
+  bouton.disabled = false;
 }
 async function ouvrirPiece(id){
   try{
