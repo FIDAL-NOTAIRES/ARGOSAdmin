@@ -1134,7 +1134,7 @@ function afficherSite(r){
   afficherPlan(plan, r.stockage_pret);
 
   const cases = $("fs-cases"); cases.innerHTML = "";
-  for(const n of [1,2,3,4,5,6]){
+  for(const n of [1,2,7,3,4,5,6]){      // Servitudes (7) s'affiche entre Titre et Exploitation
     const pieces = r.pieces.filter(p => p.rubrique === n && !p.est_plan);
     const div = document.createElement("div");
     div.className = "case";
