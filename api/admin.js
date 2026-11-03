@@ -641,6 +641,22 @@ const actions = {
     return { origine, resultats };
   },
 
+  // Statut de l'autorisation de dépôt (règle CORS présente pour cette adresse, sur chacun des deux comptes) : alimente l'interrupteur vert / rouge
+  async stockage_statut(sql, p, req) {
+    if (!stockagePret()) return { pret: false, ok: false, comptes: {} };
+    const origine = texte(p.origine, 200) || `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
+    const comptes = {};
+    for (const nom of ["principal", "sauvegarde"]) {
+      const compte = compteScaleway(nom);
+      try {
+        const r = await requeteSignee(compte, "GET", "", { requete: "cors" });
+        const x = r.ok ? await r.text() : "";
+        comptes[nom] = { ok: r.ok && x.includes(`<AllowedOrigin>${origine}</AllowedOrigin>`), statut: r.status };
+      } catch (e) { comptes[nom] = { ok: false, statut: 0, detail: e.message }; }
+    }
+    return { pret: true, origine, comptes, ok: Object.values(comptes).every((c) => c.ok) };
+  },
+
   // Contrôle de l'état du stockage pour l'écran (sans exposer les clés)
   async stockage_etat() {
     const principal = compteScaleway("principal"), sauvegarde = compteScaleway("sauvegarde");
