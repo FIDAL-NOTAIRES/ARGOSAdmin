@@ -106,7 +106,7 @@
     padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
   .message.visible{opacity:1}
   /* ---- fiche site (lot 2) ---- */
-  .cases{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .cases{display:grid;grid-template-columns:1fr;gap:16px}
   .case{background:var(--papier);border:1px solid var(--trait);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
   .case .titre{padding:12px 16px;border-bottom:1px solid var(--trait);display:flex;align-items:center;gap:10px}
   .case .titre h3{font-size:17px}
@@ -151,6 +151,12 @@
   .case li .intitule:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--canard);background:#fff}
   .case li .ouvrir{border:0;background:transparent;color:var(--canard);font-size:13px;padding:2px 6px}
   .case li .ouvrir:hover{text-decoration:underline}
+  .ligne.cadastre-contenance{grid-template-columns:1.5fr 1fr;align-items:start}
+  .contenance{display:flex;align-items:center;gap:6px}
+  .contenance input[type=number]{width:100%;min-width:0;padding:10px 8px;border:1px solid var(--trait);border-radius:8px;background:#fff;font:inherit;text-align:right}
+  .contenance span{color:var(--gris);font-size:13px;margin-right:6px}
+  select.liste{width:100%;padding:10px 12px;border:1px solid var(--trait);border-radius:8px;background:#fff;font:inherit;color:var(--texte)}
+  .sugg li .suite{color:var(--gris)}
   .rel-sugg{position:relative}
   .sugg{list-style:none;margin:2px 0 0;padding:4px;background:#fff;border:1px solid var(--trait);border-radius:8px;box-shadow:0 8px 24px rgba(15,34,56,.16);position:absolute;left:0;right:0;top:100%;z-index:30;max-height:270px;overflow:auto}
   .sugg[hidden]{display:none}
@@ -200,7 +206,7 @@
     .cases,.ligne.trois{grid-template-columns:1fr}
     header{padding:0 14px}
     main{padding:18px 12px 40px}
-    .ligne.deux,.ligne.quatre{grid-template-columns:1fr}
+    .ligne.deux,.ligne.quatre,.ligne.cadastre-contenance{grid-template-columns:1fr}
     th,td{padding:9px 10px}
     .masque-mobile{display:none}
   }
@@ -513,13 +519,20 @@
           <div><label for="fs-f-commune">Commune</label><input type="text" id="fs-f-commune"></div>
         </div>
         <div class="ligne deux">
-          <div><label for="fs-f-nature">Nature du bien (affichée sur le portail : entrepôt, bureaux, terrain…)</label><input type="text" id="fs-f-nature" placeholder="Entrepôt"></div>
-          <div><label for="fs-f-surface">Contenance</label><input type="text" id="fs-f-surface" placeholder="12 a 34 ca"></div>
+          <div><label for="fs-f-nature">Nature du bien</label><select id="fs-f-nature" class="liste"></select></div>
+          <div><label for="fs-f-titre">Titre de propriété</label><select id="fs-f-titre" class="liste"></select></div>
         </div>
-        <label for="fs-f-cadastre">Références cadastrales</label>
-        <input type="text" id="fs-f-cadastre" placeholder="Section AB n° 123, 124">
-        <label for="fs-f-titre">Titre de propriété (acte, date, notaire, publication)</label>
-        <input type="text" id="fs-f-titre">
+        <div class="ligne cadastre-contenance">
+          <div><label for="fs-f-cadastre">Références cadastrales</label><input type="text" id="fs-f-cadastre" placeholder="Section AB n° 123, 124"></div>
+          <div>
+            <label>Contenance</label>
+            <div class="contenance">
+              <input type="number" min="0" id="fs-f-ha" inputmode="numeric" aria-label="Hectares"><span>ha</span>
+              <input type="number" min="0" max="99" id="fs-f-a" inputmode="numeric" aria-label="Ares"><span>a</span>
+              <input type="number" min="0" max="99" id="fs-f-ca" inputmode="numeric" aria-label="Centiares"><span>ca</span>
+            </div>
+          </div>
+        </div>
         <label for="fs-f-entree">Date d'entrée dans le patrimoine (reprise dans les caractéristiques de la fiche de synthèse)</label>
         <input type="date" id="fs-f-entree" style="max-width:220px">
         <label for="fs-f-designation">Extrait de la désignation (repris en tête de la fiche PDF)</label>
@@ -1125,11 +1138,14 @@ function afficherSite(r){
   $("fs-avert-stockage").style.display = r.stockage_pret ? "none" : "block";
   $("fs-btn-autoriser").style.display = r.stockage_pret ? "" : "none";
 
-  $("fs-f-nom").value = s.nom || ""; $("fs-f-adresse").value = s.adresse || "";
+  $("fs-f-nom").value = s.nom || "";
   $("fs-f-cp").value = s.code_postal || ""; $("fs-f-commune").value = s.commune || "";
+  suffixeCourant = suffixeVille(); $("fs-f-adresse").value = (s.adresse || "") + (s.adresse ? suffixeCourant : "");
   majVille(); basculerVilleManuelle(!(s.code_postal || s.commune));   // code postal et commune : repliés tant qu'ils sont renseignés
-  $("fs-f-surface").value = refs.surface || ""; $("fs-f-cadastre").value = refs.cadastre || "";
-  $("fs-f-titre").value = refs.titre || ""; $("fs-f-entree").value = refs.entree || ""; $("fs-f-designation").value = fiche.designation || ""; $("fs-f-nature").value = fiche.nature || "";
+  const ct = lireContenance(refs.surface); $("fs-f-ha").value = ct.ha; $("fs-f-a").value = ct.a; $("fs-f-ca").value = ct.ca;
+  $("fs-f-cadastre").value = refs.cadastre || "";
+  remplirListe("fs-f-nature", NATURES_BIEN, fiche.nature); remplirListe("fs-f-titre", TITRES_PROPRIETE, refs.titre);
+  $("fs-f-entree").value = refs.entree || ""; $("fs-f-designation").value = fiche.designation || "";
   basculer("form-site", false);
 
   const lignes = [];
@@ -1210,10 +1226,55 @@ async function afficherPlan(plan, stockagePret){
   } else { zone.onclick = zone.ondrop = zone.ondragover = null; }
 }
 // ---------- Adresse : suggestions au fil de la saisie (Base Adresse Nationale), code postal et commune repris automatiquement ----------
-let suggListe = [], suggIdx = -1, suggTempo = null, suggSeq = 0;
+let suggListe = [], suggIdx = -1, suggTempo = null, suggSeq = 0, suffixeCourant = "";
+// L'adresse est affichée avec le code postal et la commune à la suite (« 65 rue de Paris, 59110 La Madeleine ») pour la lisibilité ;
+// elle est enregistrée sans ce suffixe, le code postal et la commune restant des champs distincts.
+function suffixeVille(){ const v = ($("fs-f-cp").value.trim() + " " + $("fs-f-commune").value.trim()).trim(); return v ? ", " + v : ""; }
+function adresseSansSuffixe(a){
+  a = String(a || "").trim();
+  if(suffixeCourant && a.toLowerCase().endsWith(suffixeCourant.toLowerCase())) a = a.slice(0, a.length - suffixeCourant.length);
+  return a.replace(/[,\s]+$/, "");
+}
+function reecrireAdresse(){
+  const base = adresseSansSuffixe($("fs-f-adresse").value);
+  suffixeCourant = suffixeVille();
+  $("fs-f-adresse").value = base + suffixeCourant;
+}
 function majVille(){
   const cp = $("fs-f-cp").value.trim(), c = $("fs-f-commune").value.trim();
-  $("fs-ville").innerHTML = (cp || c) ? `${html((cp + " " + c).trim())} · <a href="#" onclick="basculerVilleManuelle();return false">corriger</a>` : "";
+  $("fs-ville").innerHTML = (cp || c) ? `<a href="#" onclick="basculerVilleManuelle();return false">corriger le code postal ou la commune</a>` : "";
+}
+// ---------- Listes déroulantes (nature du bien, titre de propriété) : une valeur déjà saisie hors liste est conservée ----------
+const NATURES_BIEN = ["Terrain", "Immeuble", "Lot(s) de copropriété", "Ensemble de bureaux", "Commerce", "Ensemble industriel", "Ensemble à usage scolaire",
+  "Entrepôt / plateforme logistique", "Ensemble de logements", "Local d’activité", "Ensemble hôtelier", "Parking / garages",
+  "Ensemble à usage de santé", "Équipement sportif ou de loisirs", "Terrain agricole ou forestier", "Autre"];
+const TITRES_PROPRIETE = ["Acquisition", "Fusion", "Échange", "Bail emphytéotique", "Bail à construction", "Bail professionnel",
+  "Donation", "Succession", "Apport", "Adjudication", "Partage", "Transmission universelle de patrimoine", "Crédit-bail immobilier"];
+function remplirListe(id, options, valeur){
+  const s = $(id); const v = String(valeur || "").trim();
+  const liste = v && !options.includes(v) ? [...options, v] : options;
+  s.innerHTML = `<option value="">— choisir —</option>` + liste.map(o => `<option value="${html(o)}">${html(o)}</option>`).join("");
+  s.value = v;
+}
+// ---------- Contenance : trois cases hectares / ares / centiares, enregistrée au format « 1 ha 12 a 34 ca » ----------
+function lireContenance(txt){
+  txt = String(txt || "").trim();
+  if(!txt) return { ha: "", a: "", ca: "" };
+  let m;
+  if((m = txt.match(/^([\d\s.,]+)\s*m[²2]/i))){            // ancienne saisie en m²
+    const total = Math.round(parseFloat(m[1].replace(/\s/g, "").replace(",", ".")) || 0);
+    return { ha: Math.floor(total / 10000) || "", a: Math.floor((total % 10000) / 100) || "", ca: total % 100 || "" };
+  }
+  const g = (re) => { const x = txt.match(re); return x ? String(parseInt(x[1], 10)) : ""; };
+  return { ha: g(/(\d+)\s*ha/i), a: g(/(?:^|\s)(\d+)\s*a(?=\s|$)/i), ca: g(/(\d+)\s*ca/i) };
+}
+function ecrireContenance(){
+  const n = (id) => parseInt($(id).value, 10) || 0;
+  const ha = n("fs-f-ha"), a = n("fs-f-a"), ca = n("fs-f-ca"), p = [];
+  if(ha) p.push(ha + " ha");
+  if(a || (ha && ca)) p.push(a + " a");
+  if(ca) p.push(ca + " ca");
+  return p.join(" ");
 }
 function basculerVilleManuelle(force){
   const l = $("fs-ligne-ville");
@@ -1232,16 +1293,17 @@ async function chercherAdresses(q){
 }
 function afficherSugg(){
   const ul = $("fs-sugg");
-  ul.innerHTML = suggListe.map((f, i) => `<li role="option" data-i="${i}" class="${i === suggIdx ? "actif" : ""}">${html(f.properties.name)}<small>${html(((f.properties.postcode || "") + " " + (f.properties.city || "")).trim())}</small></li>`).join("");
+  ul.innerHTML = suggListe.map((f, i) => `<li role="option" data-i="${i}" class="${i === suggIdx ? "actif" : ""}">${html(f.properties.name)}<span class="suite">, ${html(((f.properties.postcode || "") + " " + (f.properties.city || "")).trim())}</span></li>`).join("");
   ul.hidden = !suggListe.length;
   $("fs-f-adresse").setAttribute("aria-expanded", String(!!suggListe.length));
 }
 function fermerSugg(){ suggListe = []; suggIdx = -1; afficherSugg(); }
 function choisirSugg(i){
   const f = suggListe[i]; if(!f) return;
-  $("fs-f-adresse").value = f.properties.name;
   $("fs-f-cp").value = f.properties.postcode || "";
   $("fs-f-commune").value = f.properties.city || "";
+  suffixeCourant = suffixeVille();
+  $("fs-f-adresse").value = f.properties.name + suffixeCourant;
   fermerSugg(); majVille(); basculerVilleManuelle(false);
 }
 (function brancherSuggestions(){
@@ -1249,7 +1311,7 @@ function choisirSugg(i){
   champ.addEventListener("input", () => {
     clearTimeout(suggTempo);
     const q = champ.value.trim();
-    if(q.length < 3){ fermerSugg(); return; }
+    if(q.length < 3 || (suffixeCourant && q.toLowerCase().endsWith(suffixeCourant.toLowerCase()))){ fermerSugg(); return; }
     suggTempo = setTimeout(async () => {
       const num = ++suggSeq;
       const liste = await chercherAdresses(q);
@@ -1272,7 +1334,7 @@ function choisirSugg(i){
   ul.addEventListener("mousedown", (e) => {   // mousedown : avant que le champ ne perde le focus
     const li = e.target.closest("li"); if(li){ e.preventDefault(); choisirSugg(Number(li.dataset.i)); }
   });
-  $("fs-f-cp").addEventListener("input", majVille); $("fs-f-commune").addEventListener("input", majVille);
+  $("fs-f-cp").addEventListener("input", () => { reecrireAdresse(); majVille(); }); $("fs-f-commune").addEventListener("input", () => { reecrireAdresse(); majVille(); });
 })();
 async function basculerOrganisation(visible){
   try{ await api("site_organisation", { id: siteCourant.site.id, visible: !!visible }); siteCourant.site.organisation_visible = !!visible; message(visible ? "Rubrique affichée au client." : "Rubrique masquée tant qu'aucun document n'est déposé."); }
@@ -1288,9 +1350,9 @@ async function enregistrerSite(){
   try{
     await api("site_modifier", {
       id: siteCourant.site.id,
-      nom: $("fs-f-nom").value, adresse: $("fs-f-adresse").value,
+      nom: $("fs-f-nom").value, adresse: adresseSansSuffixe($("fs-f-adresse").value),
       code_postal: $("fs-f-cp").value, commune: $("fs-f-commune").value,
-      surface: $("fs-f-surface").value, cadastre: $("fs-f-cadastre").value,
+      surface: ecrireContenance(), cadastre: $("fs-f-cadastre").value,
       titre: $("fs-f-titre").value, entree: $("fs-f-entree").value, designation: $("fs-f-designation").value, nature: $("fs-f-nature").value
     });
     message("Enregistré.");
