@@ -491,7 +491,7 @@ const actions = {
   async site_modifier(sql, p) {
     const id = entier(p.id, 0);
     const references_ = {
-      cadastre: texte(p.cadastre, 600),
+      cadastre: texte(p.cadastre, 4000),
       surface: texte(p.surface, 60),
       titre: texte(p.titre, 300),
       // date d'entrée dans le patrimoine (AAAA-MM-JJ), reprise dans les caractéristiques de la fiche de synthèse
