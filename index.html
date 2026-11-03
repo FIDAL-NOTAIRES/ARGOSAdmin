@@ -208,6 +208,7 @@
   .mini:hover{background:#EEF6F7}
   .mini.rouge{color:var(--carmin);border-color:#F0C3D0}
   .mini.rouge:hover{background:#FBEDF1}
+  .retour-haut{margin:0 0 10px}
   .appareils{display:flex;flex-wrap:nowrap;gap:6px;align-items:center}
   .appareils .puce-app{white-space:nowrap;margin:0}
   td.actions-util{white-space:normal;min-width:230px;max-width:320px}
@@ -540,6 +541,7 @@
 
   <!-- ===================== FICHE SITE (lot 2) ===================== -->
   <section class="vue" id="vue-site">
+    <div class="retour-haut"><button class="btn second" type="button" id="fs-retour-haut">← Retour à la fiche client</button></div>
     <div class="entete">
       <h2 id="fs-nom"></h2>
       <span class="petit" id="fs-maj"></span>
@@ -1218,6 +1220,8 @@ function afficherSite(r){
   $("fs-nom").textContent = libelleSite(s);
   $("fs-maj").textContent = "Mis à jour le " + dateFr(s.maj_le);
   $("fs-retour").onclick = () => { ouvrirClient(s.client_id); return false; };
+  $("fs-retour-haut").textContent = "← Retour à " + (s.client_nom || "la fiche client");
+  $("fs-retour-haut").onclick = () => ouvrirClient(s.client_id);
   $("fs-avert-stockage").style.display = r.stockage_pret ? "none" : "block";
   verifierStockage();
   // Coordonnées et références = préalable : tant que l'adresse, la nature et le cadastre manquent, le plan et les rubriques sont grisés
