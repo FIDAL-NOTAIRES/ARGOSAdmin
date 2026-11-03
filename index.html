@@ -203,6 +203,18 @@
   .bloc.replie .titre{border-bottom:0}
   .btn.export{background:#1F6F78;border-color:#1F6F78;color:#fff;font-weight:600}
   .btn.export:hover{background:#17575E}
+  .interrupteur{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--trait);background:#fff;border-radius:999px;padding:6px 14px 6px 8px;cursor:pointer;font:inherit;font-size:13.5px;color:var(--texte)}
+  .interrupteur .rail{width:42px;height:24px;border-radius:12px;background:#9AA3AD;position:relative;flex:none;transition:background .2s}
+  .interrupteur .bouton{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .2s}
+  .interrupteur.on{border-color:#BFE3CF;background:#F0FAF4}.interrupteur.on .rail{background:#2E9E5B}.interrupteur.on .bouton{left:21px}
+  .interrupteur.off{border-color:#F0C3D0;background:#FDF3F6}.interrupteur.off .rail{background:#C0394B}
+  .interrupteur:disabled{opacity:.7;cursor:wait}
+  .verrou{opacity:.36;filter:grayscale(1);pointer-events:none;user-select:none;transition:opacity .2s}
+  .avert.guide{display:block}
+  .guide .etapes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .guide .etape{padding:4px 12px;border-radius:999px;background:#fff;border:1px solid #BFDADC;color:#6B7B8C;font-size:13px}
+  .guide .etape.actuelle{background:#1F6F78;border-color:#1F6F78;color:#fff;font-weight:600}
+  .guide .actions-guide{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:10px}
   .btn.principal{padding:10px 18px;font-weight:600;font-size:15px;box-shadow:0 0 0 3px rgba(46,125,132,.20)}
   .btn.principal.pulse{animation:pulsation 1.8s ease-in-out infinite}
   @keyframes pulsation{0%,100%{box-shadow:0 0 0 3px rgba(46,125,132,.20)}50%{box-shadow:0 0 0 7px rgba(46,125,132,.28)}}
@@ -517,12 +529,18 @@
       <span class="petit" id="fs-maj"></span>
       <div class="droite">
         <button class="btn principal" type="button" id="fs-btn-coordonnees" onclick="basculer('form-site')" title="Adresse, nature, références cadastrales, contenance, titre, date d'entrée : tout ce qui alimente la fiche de synthèse du client">✎ Coordonnées et références</button>
-        <button class="btn second" type="button" id="fs-btn-autoriser" onclick="configurerStockage()" title="Pose la règle d'autorisation d'envoi direct sur les deux comptes de stockage. À faire une fois par adresse d'ARGOSAdmin, ou si un dépôt est refusé par le navigateur.">Autoriser le dépôt sur les deux comptes</button>
+        <button class="interrupteur" type="button" id="fs-btn-autoriser" role="switch" aria-checked="false" onclick="configurerStockage()" title="Vert : le dépôt est autorisé sur les deux comptes de stockage. Rouge : cliquez pour poser l'autorisation (à faire une fois par adresse d'ARGOSAdmin, ou si un dépôt est refusé par le navigateur).">
+          <span class="rail"><span class="bouton"></span></span><span id="fs-autoriser-lib">Dépôt : vérification…</span>
+        </button>
       </div>
     </div>
     <div class="avert guide" id="fs-guide" style="display:none">
-      <span><strong>À renseigner d'abord :</strong> l'adresse, la nature, les références cadastrales, le titre et la date d'entrée du site, avec le bouton « Coordonnées et références ». Ces informations alimentent la fiche de synthèse du client.</span>
-      <button class="btn" type="button" onclick="basculer('form-site', true); $('fs-f-adresse').focus()">✎ Renseigner maintenant</button>
+      <div class="etapes"><span class="etape actuelle">① Coordonnées et références <em>(préalable)</em></span><span class="etape">② Plan du site</span><span class="etape">③ Documents</span></div>
+      <div><strong>Commencez ici.</strong> Renseignez au minimum l'adresse, la nature du bien et les références cadastrales, puis enregistrez : le plan du site et le dépôt des documents se débloquent ensuite. Ces informations alimentent la fiche de synthèse du client.</div>
+      <div class="actions-guide">
+        <button class="btn principal pulse" type="button" onclick="basculer('form-site', true); $('fs-f-adresse').focus()">✎ Renseigner les coordonnées et références</button>
+        <a href="#" onclick="deverrouillerSite();return false">Passer cette étape et déposer quand même</a>
+      </div>
     </div>
     <div class="avert" id="fs-avert-stockage" style="display:none">Le stockage des pièces n'est pas encore configuré : les six variables SCW_* manquent sur Vercel. Le dépôt sera actif dès qu'elles seront posées.</div>
     <div class="resultat-stockage" id="fs-stockage-resultat"></div>
@@ -581,7 +599,7 @@
     <div class="avert cadastre" id="fs-avert-cadastre" style="display:none"></div>
 
     <!-- Plan du site (02/11) : produit par l'étude dans PAINT, déposé ici, repris dans la fiche de synthèse du client -->
-    <div class="bloc">
+    <div class="bloc" id="fs-bloc-plan">
       <div class="titre">
         <h3>Plan du site</h3>
         <span class="petit">Plan cadastral colorié (image PNG ou JPEG) repris en page 2 de la fiche de synthèse ; sans plan, la fiche prend un extrait provisoire.</span>
@@ -1174,10 +1192,13 @@ function afficherSite(r){
   $("fs-maj").textContent = "Mis à jour le " + dateFr(s.maj_le);
   $("fs-retour").onclick = () => { ouvrirClient(s.client_id); return false; };
   $("fs-avert-stockage").style.display = r.stockage_pret ? "none" : "block";
-  $("fs-btn-autoriser").style.display = r.stockage_pret ? "" : "none";
-  { const incomplet = !(s.adresse && refs.cadastre && fiche.nature);
-    $("fs-guide").style.display = incomplet ? "flex" : "none";
-    $("fs-btn-coordonnees").classList.toggle("pulse", incomplet); }
+  verifierStockage();
+  // Coordonnées et références = préalable : tant que l'adresse, la nature et le cadastre manquent, le plan et les rubriques sont grisés
+  const incomplet = !(s.adresse && refs.cadastre && fiche.nature);
+  const verrouille = incomplet && !sitesDeverrouilles[s.id];
+  $("fs-guide").style.display = verrouille ? "block" : "none";
+  $("fs-btn-coordonnees").classList.toggle("pulse", verrouille);
+  [$("fs-bloc-plan"), $("fs-cases")].forEach(e => { e.classList.toggle("verrou", verrouille); e.inert = verrouille; });
 
   $("fs-f-nom").value = s.nom || "";
   $("fs-f-cp").value = s.code_postal || ""; $("fs-f-commune").value = s.commune || "";
@@ -1187,7 +1208,7 @@ function afficherSite(r){
   { const pc = parserCadastre(refs.cadastre); parcellesLignes = pc.lignes; parcellesLibre = pc.libre; dessinerParcelles(); $("fs-import-etat").textContent = ""; }
   remplirListe("fs-f-nature", NATURES_BIEN, fiche.nature); remplirListe("fs-f-titre", TITRES_PROPRIETE, refs.titre);
   $("fs-f-entree").value = refs.entree || ""; $("fs-f-designation").value = fiche.designation || "";
-  basculer("form-site", false);
+  basculer("form-site", verrouille);   // site vide : le formulaire s'ouvre de lui-même
 
   const lignes = [];
   if(s.adresse || s.code_postal || s.commune) lignes.push(`<div>${html([s.adresse, [s.code_postal, s.commune].filter(Boolean).join(" ")].filter(Boolean).join(" — "))}</div>`);
@@ -1685,13 +1706,33 @@ async function intitulerPiece(id, champ){
     message("Intitulé enregistré.");
   }catch(e){ message(e.message); }
 }
+// ---------- Interrupteur du dépôt : vert = autorisé sur les deux comptes, rouge = à autoriser ----------
+const sitesDeverrouilles = {};
+function deverrouillerSite(){ sitesDeverrouilles[siteCourant.site.id] = true; afficherSite(siteCourant); }
+function majInterrupteur(etat, libelle){
+  const b = $("fs-btn-autoriser");
+  b.classList.remove("on", "off"); if(etat) b.classList.add(etat);
+  b.setAttribute("aria-checked", String(etat === "on"));
+  $("fs-autoriser-lib").textContent = libelle || (etat === "on" ? "Dépôt autorisé · 2 comptes connectés" : etat === "off" ? "Dépôt non autorisé · cliquez pour autoriser" : "Dépôt : vérification…");
+}
+async function verifierStockage(){
+  majInterrupteur("", "Dépôt : vérification…");
+  try{
+    const r = await api("stockage_statut", { origine: location.origin });
+    if(!r.pret){ majInterrupteur("off", "Stockage non configuré (variables SCW_* sur Vercel)"); return; }
+    if(r.ok){ majInterrupteur("on"); return; }
+    const ko = Object.entries(r.comptes).filter(([, c]) => !c.ok).map(([n]) => n === "principal" ? "principal" : "sauvegarde");
+    majInterrupteur("off", "Dépôt non autorisé (" + ko.join(" + ") + ") · cliquez pour autoriser");
+  }catch(e){ majInterrupteur("off", "Statut illisible · cliquez pour autoriser"); }
+}
 async function configurerStockage(){
   const bouton = $("fs-btn-autoriser"), boite = $("fs-stockage-resultat");
-  bouton.disabled = true;
+  bouton.disabled = true; majInterrupteur("", "Autorisation en cours…");
   boite.className = "resultat-stockage visible cours"; boite.textContent = "Pose de la règle d'autorisation sur les deux comptes de stockage…";
   try{
     const r = await api("stockage_configurer", { origine: location.origin });
     const okP = r.resultats.principal === "ok", okS = r.resultats.sauvegarde === "ok";
+    majInterrupteur(okP && okS ? "on" : "off");
     boite.className = "resultat-stockage visible " + (okP && okS ? "ok" : "echec");
     boite.innerHTML =
       `<strong>${okP && okS ? "Dépôt autorisé sur les deux comptes." : "Autorisation incomplète."}</strong><br>` +
@@ -1700,6 +1741,7 @@ async function configurerStockage(){
       (okP && okS ? "" : `<br><span class="petit">Un refus 403 vient de la clé posée dans Vercel (droits ou projet) ; un 404 d'un nom de bucket ou d'une région inexacts.</span>`);
   }catch(e){
     boite.className = "resultat-stockage visible echec"; boite.textContent = "Impossible de poser l'autorisation : " + e.message;
+    majInterrupteur("off");
   }
   bouton.disabled = false;
 }
