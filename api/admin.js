@@ -494,6 +494,9 @@ const actions = {
       cadastre: texte(p.cadastre, 4000),
       surface: texte(p.surface, 60),
       titre: texte(p.titre, 300),
+      // acte du titre de propriété : date et notaire, facultatifs
+      acte_date: /^\d{4}-\d{2}-\d{2}$/.test(String(p.acte_date || "")) ? String(p.acte_date) : "",
+      notaire: texte(p.notaire, 120),
       // date d'entrée dans le patrimoine (AAAA-MM-JJ), reprise dans les caractéristiques de la fiche de synthèse
       entree: /^\d{4}-\d{2}-\d{2}$/.test(String(p.entree || "")) ? String(p.entree) : "",
     };
