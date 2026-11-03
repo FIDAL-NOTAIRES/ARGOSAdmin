@@ -152,7 +152,9 @@
   .case li .ouvrir{border:0;background:transparent;color:var(--canard);font-size:13px;padding:2px 6px}
   .case li .ouvrir:hover{text-decoration:underline}
   .ligne.cadastre-contenance{grid-template-columns:1.5fr 1fr;align-items:start}
-  .parc-ligne{display:grid;grid-template-columns:88px 1fr auto;gap:8px;margin-bottom:6px;align-items:center}
+  .parc-ligne{display:grid;grid-template-columns:88px 160px auto;justify-content:start;gap:8px;margin-bottom:6px;align-items:center}
+  .ligne.ligne-titre{grid-template-columns:1.2fr 1fr 1.2fr}
+  .facultatif{color:var(--gris);font-size:12px}
   .parc-ligne input{width:100%;padding:9px 10px;border:1px solid var(--trait);border-radius:8px;background:#fff;font:inherit}
   .parc-ligne .parc-sec{text-transform:uppercase;text-align:center}
   .zone.zone-import{margin:8px 0 4px;min-height:64px}
@@ -237,7 +239,7 @@
     .cases,.ligne.trois{grid-template-columns:1fr}
     header{padding:0 14px}
     main{padding:18px 12px 40px}
-    .ligne.deux,.ligne.quatre,.ligne.cadastre-contenance{grid-template-columns:1fr}
+    .ligne.deux,.ligne.quatre,.ligne.cadastre-contenance,.ligne.ligne-titre{grid-template-columns:1fr}
     th,td{padding:9px 10px}
     .masque-mobile{display:none}
   }
@@ -548,23 +550,26 @@
     <div class="bloc">
       <div class="formulaire-inline" id="form-site">
         <div class="ligne deux">
-          <div><label for="fs-f-nom">Nom du site</label><input type="text" id="fs-f-nom"></div>
           <div>
+            <label for="fs-f-nom">Nom du site</label>
+            <input type="text" id="fs-f-nom">
             <label for="fs-f-adresse">Adresse (suggestions au fil de la saisie)</label>
             <div class="rel-sugg">
               <input type="text" id="fs-f-adresse" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="fs-sugg" placeholder="Commencez à saisir : 65 rue de Paris La Madeleine">
               <ul id="fs-sugg" class="sugg" role="listbox" hidden></ul>
             </div>
             <div class="petit" id="fs-ville" style="margin-top:4px"></div>
+            <div class="ligne deux" id="fs-ligne-ville" hidden>
+              <div><label for="fs-f-cp">Code postal</label><input type="text" id="fs-f-cp"></div>
+              <div><label for="fs-f-commune">Commune</label><input type="text" id="fs-f-commune"></div>
+            </div>
           </div>
-        </div>
-        <div class="ligne deux" id="fs-ligne-ville" hidden>
-          <div><label for="fs-f-cp">Code postal</label><input type="text" id="fs-f-cp"></div>
-          <div><label for="fs-f-commune">Commune</label><input type="text" id="fs-f-commune"></div>
-        </div>
-        <div class="ligne deux">
           <div><label for="fs-f-nature">Nature du bien</label><select id="fs-f-nature" class="liste"></select></div>
+        </div>
+        <div class="ligne ligne-titre">
           <div><label for="fs-f-titre">Titre de propriété</label><select id="fs-f-titre" class="liste"></select></div>
+          <div><label for="fs-f-acte-date">Date de l'acte <span class="facultatif">(facultatif)</span></label><input type="date" id="fs-f-acte-date"></div>
+          <div><label for="fs-f-notaire">Nom du notaire <span class="facultatif">(facultatif)</span></label><input type="text" id="fs-f-notaire" placeholder="Me Dupont"></div>
         </div>
         <div class="ligne cadastre-contenance">
           <div>
@@ -1207,13 +1212,14 @@ function afficherSite(r){
   const ct = lireContenance(refs.surface); $("fs-f-ha").value = ct.ha; $("fs-f-a").value = ct.a; $("fs-f-ca").value = ct.ca;
   { const pc = parserCadastre(refs.cadastre); parcellesLignes = pc.lignes; parcellesLibre = pc.libre; dessinerParcelles(); $("fs-import-etat").textContent = ""; }
   remplirListe("fs-f-nature", NATURES_BIEN, fiche.nature); remplirListe("fs-f-titre", TITRES_PROPRIETE, refs.titre);
+  $("fs-f-acte-date").value = refs.acte_date || ""; $("fs-f-notaire").value = refs.notaire || "";
   $("fs-f-entree").value = refs.entree || ""; $("fs-f-designation").value = fiche.designation || "";
   basculer("form-site", verrouille);   // site vide : le formulaire s'ouvre de lui-même
 
   const lignes = [];
   if(s.adresse || s.code_postal || s.commune) lignes.push(`<div>${html([s.adresse, [s.code_postal, s.commune].filter(Boolean).join(" ")].filter(Boolean).join(" — "))}</div>`);
   if(refs.cadastre) lignes.push(`<div class="petit">Cadastre : ${html(refs.cadastre)}${refs.surface ? " — " + html(refs.surface) : ""}</div>`);
-  if(refs.titre) lignes.push(`<div class="petit">Titre : ${html(refs.titre)}</div>`);
+  if(refs.titre) lignes.push(`<div class="petit">Titre : ${html(refs.titre)}${refs.acte_date ? " — acte du " + html(String(refs.acte_date).split("-").reverse().join("/")) : ""}${refs.notaire ? ", " + html(refs.notaire) : ""}</div>`);
   if(refs.entree) lignes.push(`<div class="petit">Entrée dans le patrimoine : ${html(String(refs.entree).split("-").reverse().join("/"))}</div>`);
   if(fiche.designation) lignes.push(`<div class="petit" style="margin-top:6px;white-space:pre-line">${html(fiche.designation)}</div>`);
   $("fs-resume").innerHTML = lignes.length ? lignes.join("") : `<span class="info">Aucune coordonnée saisie. Ouvrez « Coordonnées et références » ou déposez la note de désignation.</span>`;
@@ -1577,7 +1583,7 @@ async function enregistrerSite(){
       nom: $("fs-f-nom").value, adresse: adresseSansSuffixe($("fs-f-adresse").value),
       code_postal: $("fs-f-cp").value, commune: $("fs-f-commune").value,
       surface: ecrireContenance(), cadastre: serialiserParcelles(),
-      titre: $("fs-f-titre").value, entree: $("fs-f-entree").value, designation: $("fs-f-designation").value, nature: $("fs-f-nature").value
+      titre: $("fs-f-titre").value, acte_date: $("fs-f-acte-date").value, notaire: $("fs-f-notaire").value, entree: $("fs-f-entree").value, designation: $("fs-f-designation").value, nature: $("fs-f-nature").value
     });
     message("Enregistré.");
     ouvrirSite(siteCourant.site.id);
