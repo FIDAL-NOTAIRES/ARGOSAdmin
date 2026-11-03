@@ -1405,7 +1405,7 @@ function extraireDepuisTexte(texte){
   while((m = re1.exec(texte))) (m[2].match(/\d{1,4}/g) || []).forEach(n => ajouter(m[1], n));
   // 2) forme compacte (AB 123, AB123, AB 0123), en majuscules, hors mots courants et hors années
   const reste = texte.replace(re1, " ");
-  const re2 = /\b([0-9]?[A-Z]{1,2})\s?0*(\d{1,4})\b/g;
+  const re2 = /\b([0-9]?[A-Z]{1,2})[ \t\u00A0]{0,3}0*(\d{1,4})\b/g;
   while((m = re2.exec(reste))){
     if(MOTS_NON_SECTION.has(m[1])) continue;
     if(m[2].length === 4 && +m[2] >= 1900 && +m[2] <= 2100) continue;
@@ -1475,7 +1475,8 @@ async function lireFichierCadastre(f){
     const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise; let texte = "";
     for(let p = 1; p <= Math.min(pdf.numPages, 40); p++){
       const c = await (await pdf.getPage(p)).getTextContent();
-      texte += c.items.map(i => i.str + (i.hasEOL ? "\n" : " ")).join("") + "\n";
+      // les cases d'un tableau PDF sont séparées par des éléments « espace » : on les écarte, et on garde les fins de ligne
+      texte += c.items.map(i => (i.str.trim() ? i.str.trim() + " " : "") + (i.hasEOL ? "\n" : "")).join("") + "\n";
     }
     if(!texte.trim()) throw new Error("PDF sans texte lisible (scan) : saisissez les références à la main.");
     return extraireDepuisTexte(texte);
