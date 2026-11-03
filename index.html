@@ -192,6 +192,21 @@
   .mini:hover{background:#EEF6F7}
   .mini.rouge{color:var(--carmin);border-color:#F0C3D0}
   .mini.rouge:hover{background:#FBEDF1}
+  .appareils{display:flex;flex-wrap:nowrap;gap:6px;align-items:center}
+  .appareils .puce-app{white-space:nowrap;margin:0}
+  td.actions-util{white-space:normal;min-width:230px;max-width:320px}
+  .defile-x{overflow-x:auto}
+  .bloc .titre .plier{border:0;background:none;font:inherit;font-size:19px;font-family:inherit;color:inherit;cursor:pointer;padding:0;display:flex;align-items:center;gap:8px;text-align:left}
+  .bloc .titre .plier:hover{color:var(--canard)}
+  .bloc .titre .plier .chev{display:inline-block;width:14px;color:var(--canard);font-size:15px}
+  .bloc.replie > :not(.titre){display:none}
+  .bloc.replie .titre{border-bottom:0}
+  .btn.export{background:#1F6F78;border-color:#1F6F78;color:#fff;font-weight:600}
+  .btn.export:hover{background:#17575E}
+  .btn.principal{padding:10px 18px;font-weight:600;font-size:15px;box-shadow:0 0 0 3px rgba(46,125,132,.20)}
+  .btn.principal.pulse{animation:pulsation 1.8s ease-in-out infinite}
+  @keyframes pulsation{0%,100%{box-shadow:0 0 0 3px rgba(46,125,132,.20)}50%{box-shadow:0 0 0 7px rgba(46,125,132,.28)}}
+  .avert.guide{background:#E6F3F4;border:1px solid #BFDADC;color:#1F565C;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .puce-app{display:inline-block;font-size:12px;color:var(--gris);border:1px solid var(--trait);border-radius:10px;padding:1px 7px;margin:1px 2px 1px 0}
   .puce-app button{border:0;background:none;color:var(--carmin);padding:0 0 0 4px;font-size:12px}
   .cases-sites{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:6px}
@@ -450,19 +465,21 @@
         </div>
         <div id="fu-lien"></div>
       </div>
+      <div class="defile-x">
       <table>
         <thead><tr><th>Personne</th><th>Rôle</th><th>État</th><th class="masque-mobile">Dernière connexion</th><th class="masque-mobile">Appareils connus</th><th></th></tr></thead>
         <tbody id="corps-utilisateurs"></tbody>
       </table>
+      </div>
       <div class="vide" id="vide-utilisateurs" style="display:none">Aucun utilisateur. Ajoutez les personnes indiquées par le point de contact du client.</div>
     </div>
 
     <!-- Journal (lot 3) -->
-    <div class="bloc">
+    <div class="bloc replie">
       <div class="titre">
-        <h3>Connexions</h3>
+        <h3><button type="button" class="plier" aria-expanded="false" onclick="plier(this)"><span class="chev">▸</span>Connexions</button></h3>
         <span class="petit" id="fc-nb-connexions"></span>
-        <div class="droite"><button class="btn second" type="button" onclick="exporterJournal()">Exporter en PDF</button></div>
+        <div class="droite"><button class="btn export" type="button" onclick="exporterJournal()" title="Un seul PDF : connexions et pièces consultées">⬇ Exporter en PDF</button></div>
       </div>
       <div class="filtres">
         <div><label for="fj-personne">Personne</label><select id="fj-personne" onchange="chargerJournal()"><option value="">Toutes</option></select></div>
@@ -480,8 +497,9 @@
       </table>
       <div class="vide" id="vide-connexions" style="display:none">Aucune connexion enregistrée.</div>
     </div>
-    <div class="bloc">
-      <div class="titre"><h3>Pièces consultées</h3><span class="petit" id="fc-nb-telechargements"></span></div>
+    <div class="bloc replie">
+      <div class="titre"><h3><button type="button" class="plier" aria-expanded="false" onclick="plier(this)"><span class="chev">▸</span>Pièces consultées</button></h3><span class="petit" id="fc-nb-telechargements"></span>
+        <div class="droite"><button class="btn export" type="button" onclick="exporterJournal()" title="Un seul PDF : connexions et pièces consultées">⬇ Exporter en PDF</button></div></div>
       <table>
         <thead><tr><th>Date et heure</th><th>Personne</th><th>Pièce</th><th class="masque-mobile">Site</th></tr></thead>
         <tbody id="corps-telechargements"></tbody>
@@ -498,9 +516,13 @@
       <h2 id="fs-nom"></h2>
       <span class="petit" id="fs-maj"></span>
       <div class="droite">
+        <button class="btn principal" type="button" id="fs-btn-coordonnees" onclick="basculer('form-site')" title="Adresse, nature, références cadastrales, contenance, titre, date d'entrée : tout ce qui alimente la fiche de synthèse du client">✎ Coordonnées et références</button>
         <button class="btn second" type="button" id="fs-btn-autoriser" onclick="configurerStockage()" title="Pose la règle d'autorisation d'envoi direct sur les deux comptes de stockage. À faire une fois par adresse d'ARGOSAdmin, ou si un dépôt est refusé par le navigateur.">Autoriser le dépôt sur les deux comptes</button>
-        <button class="btn second" type="button" onclick="basculer('form-site')">Coordonnées et références</button>
       </div>
+    </div>
+    <div class="avert guide" id="fs-guide" style="display:none">
+      <span><strong>À renseigner d'abord :</strong> l'adresse, la nature, les références cadastrales, le titre et la date d'entrée du site, avec le bouton « Coordonnées et références ». Ces informations alimentent la fiche de synthèse du client.</span>
+      <button class="btn" type="button" onclick="basculer('form-site', true); $('fs-f-adresse').focus()">✎ Renseigner maintenant</button>
     </div>
     <div class="avert" id="fs-avert-stockage" style="display:none">Le stockage des pièces n'est pas encore configuré : les six variables SCW_* manquent sur Vercel. Le dépôt sera actif dès qu'elles seront posées.</div>
     <div class="resultat-stockage" id="fs-stockage-resultat"></div>
@@ -985,7 +1007,7 @@ function afficherUtilisateurs(r){
   for(const u of r.utilisateurs){
     const [cls, lib] = etatUtilisateur(u);
     const bloque = cls === "suspendu" || cls === "coupe";
-    const appareils = (u.appareils || []).map(a => `<span class="puce-app" title="Vu le ${dateFr(a.vu_le)}">${html(a.libelle)}${a.type === "telephone" ? " 📱" : ""}<button type="button" title="Retirer cet appareil" onclick="retirerAppareil(${a.id})">✕</button></span>`).join("") || "<span class='petit'>—</span>";
+    const appareils = `<div class="appareils">` + ((u.appareils || []).map(a => `<span class="puce-app" title="Vu le ${dateFr(a.vu_le)}">${html(a.libelle)}${a.type === "telephone" ? " 📱" : ""}<button type="button" title="Retirer cet appareil" onclick="retirerAppareil(${a.id})">✕</button></span>`).join("") || "<span class='petit'>—</span>") + `</div>`;
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td><strong>${html(u.prenom + " " + u.nom)}</strong><div class="petit">${html(u.courriel)}</div></td>` +
@@ -993,7 +1015,7 @@ function afficherUtilisateurs(r){
       `<td><span class="etat ${cls}">${html(lib)}</span></td>` +
       `<td class="masque-mobile">${u.derniere_connexion ? dateFr(u.derniere_connexion) : "—"}</td>` +
       `<td class="masque-mobile">${appareils}</td>` +
-      `<td style="white-space:nowrap">` +
+      `<td class="actions-util">` +
         (!u.active_le ? `<button class="mini" type="button" onclick="lienUtilisateur(${u.id},'activation')">Renvoyer le lien</button>` :
           `<button class="mini" type="button" onclick="lienUtilisateur(${u.id},'code')">Réinitialiser le code</button><button class="mini" type="button" onclick="lienUtilisateur(${u.id},'mdp')">Nouveau mot de passe</button>`) +
         `<button class="mini" type="button" onclick="ouvrirFormUtilisateur(${u.id})">Modifier</button>` +
@@ -1056,6 +1078,12 @@ async function supprimerUtilisateur(id){
   if(!confirm("Supprimer cette personne (jamais activée) ?")) return;
   try{ await api("utilisateur_supprimer", { id }); message("Supprimé."); ouvrirClient(clientCourant.client.id); }
   catch(e){ message(e.message); }
+}
+function plier(bouton){
+  const bloc = bouton.closest(".bloc");
+  const ferme = bloc.classList.toggle("replie");
+  bouton.setAttribute("aria-expanded", String(!ferme));
+  bouton.querySelector(".chev").textContent = ferme ? "▸" : "▾";
 }
 async function retirerAppareil(id){
   if(!confirm("Retirer cet appareil ? La personne devra se reconnecter avec son mot de passe (et FIDAL Notaires sera prévenu du nouvel appareil).")) return;
@@ -1147,6 +1175,9 @@ function afficherSite(r){
   $("fs-retour").onclick = () => { ouvrirClient(s.client_id); return false; };
   $("fs-avert-stockage").style.display = r.stockage_pret ? "none" : "block";
   $("fs-btn-autoriser").style.display = r.stockage_pret ? "" : "none";
+  { const incomplet = !(s.adresse && refs.cadastre && fiche.nature);
+    $("fs-guide").style.display = incomplet ? "flex" : "none";
+    $("fs-btn-coordonnees").classList.toggle("pulse", incomplet); }
 
   $("fs-f-nom").value = s.nom || "";
   $("fs-f-cp").value = s.code_postal || ""; $("fs-f-commune").value = s.commune || "";
