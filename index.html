@@ -151,9 +151,13 @@
   .case li .intitule:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--canard);background:#fff}
   .case li .ouvrir{border:0;background:transparent;color:var(--canard);font-size:13px;padding:2px 6px}
   .case li .ouvrir:hover{text-decoration:underline}
-  .ligne.cadastre-contenance{grid-template-columns:1.5fr 1fr;align-items:start}
+  .ligne.cadastre-contenance{align-items:start}
   .parc-ligne{display:grid;grid-template-columns:88px 160px auto;justify-content:start;gap:8px;margin-bottom:6px;align-items:center}
-  .ligne.ligne-titre{grid-template-columns:1.2fr 1fr 1.2fr}
+  .ligne.ligne-titre{grid-template-columns:1fr 1.7fr}
+  .acte-colle{display:grid;grid-template-columns:auto 1fr;gap:0}
+  .acte-colle input[type=date]{padding:9px 11px;border:1px solid var(--trait);border-radius:7px 0 0 7px;background:#fff;font:inherit;color:var(--texte)}
+  .acte-colle input[type=text]{border-radius:0 7px 7px 0;margin-left:-1px}
+  .ligne.cadastre-contenance{grid-template-columns:330px auto;justify-content:start;gap:28px}
   .facultatif{color:var(--gris);font-size:12px}
   .parc-ligne input{width:100%;padding:9px 10px;border:1px solid var(--trait);border-radius:8px;background:#fff;font:inherit}
   .parc-ligne .parc-sec{text-transform:uppercase;text-align:center}
@@ -239,7 +243,7 @@
     .cases,.ligne.trois{grid-template-columns:1fr}
     header{padding:0 14px}
     main{padding:18px 12px 40px}
-    .ligne.deux,.ligne.quatre,.ligne.cadastre-contenance,.ligne.ligne-titre{grid-template-columns:1fr}
+    .ligne.deux,.ligne.quatre,.ligne.cadastre-contenance,.ligne.ligne-titre,.acte-colle{grid-template-columns:1fr}
     th,td{padding:9px 10px}
     .masque-mobile{display:none}
   }
@@ -567,9 +571,11 @@
           <div><label for="fs-f-nature">Nature du bien</label><select id="fs-f-nature" class="liste"></select></div>
         </div>
         <div class="ligne ligne-titre">
-          <div><label for="fs-f-titre">Titre de propriété</label><select id="fs-f-titre" class="liste"></select></div>
-          <div><label for="fs-f-acte-date">Date de l'acte <span class="facultatif">(facultatif)</span></label><input type="date" id="fs-f-acte-date"></div>
-          <div><label for="fs-f-notaire">Nom du notaire <span class="facultatif">(facultatif)</span></label><input type="text" id="fs-f-notaire" placeholder="Me Dupont"></div>
+          <div><label for="fs-f-titre">Origine de propriété</label><select id="fs-f-titre" class="liste"></select></div>
+          <div class="acte-colle">
+            <div><label for="fs-f-acte-date">Date de l'acte <span class="facultatif">(facultatif)</span></label><input type="date" id="fs-f-acte-date"></div>
+            <div><label for="fs-f-notaire">Nom du notaire <span class="facultatif">(facultatif)</span></label><input type="text" id="fs-f-notaire" placeholder="Me Dupont"></div>
+          </div>
         </div>
         <div class="ligne cadastre-contenance">
           <div>
@@ -1219,7 +1225,7 @@ function afficherSite(r){
   const lignes = [];
   if(s.adresse || s.code_postal || s.commune) lignes.push(`<div>${html([s.adresse, [s.code_postal, s.commune].filter(Boolean).join(" ")].filter(Boolean).join(" — "))}</div>`);
   if(refs.cadastre) lignes.push(`<div class="petit">Cadastre : ${html(refs.cadastre)}${refs.surface ? " — " + html(refs.surface) : ""}</div>`);
-  if(refs.titre) lignes.push(`<div class="petit">Titre : ${html(refs.titre)}${refs.acte_date ? " — acte du " + html(String(refs.acte_date).split("-").reverse().join("/")) : ""}${refs.notaire ? ", " + html(refs.notaire) : ""}</div>`);
+  if(refs.titre) lignes.push(`<div class="petit">Origine : ${html(refs.titre)}${refs.acte_date ? " — acte du " + html(String(refs.acte_date).split("-").reverse().join("/")) : ""}${refs.notaire ? ", " + html(refs.notaire) : ""}</div>`);
   if(refs.entree) lignes.push(`<div class="petit">Entrée dans le patrimoine : ${html(String(refs.entree).split("-").reverse().join("/"))}</div>`);
   if(fiche.designation) lignes.push(`<div class="petit" style="margin-top:6px;white-space:pre-line">${html(fiche.designation)}</div>`);
   $("fs-resume").innerHTML = lignes.length ? lignes.join("") : `<span class="info">Aucune coordonnée saisie. Ouvrez « Coordonnées et références » ou déposez la note de désignation.</span>`;
@@ -1466,7 +1472,7 @@ async function importerCadastre(fichiers){
   }
   etat.textContent = msg.join(" · ") + (total ? " — vérifiez les lignes, puis enregistrez." : "");
 }
-// ---------- Listes déroulantes (nature du bien, titre de propriété) : une valeur déjà saisie hors liste est conservée ----------
+// ---------- Listes déroulantes (nature du bien, origine de propriété) : une valeur déjà saisie hors liste est conservée ----------
 const NATURES_BIEN = ["Terrain", "Immeuble", "Lot(s) de copropriété", "Ensemble de bureaux", "Commerce", "Ensemble industriel", "Ensemble à usage scolaire",
   "Entrepôt / plateforme logistique", "Ensemble de logements", "Local d’activité", "Ensemble hôtelier", "Parking / garages",
   "Ensemble à usage de santé", "Équipement sportif ou de loisirs", "Terrain agricole ou forestier", "Autre"];
