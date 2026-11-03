@@ -1413,6 +1413,16 @@ function extraireDepuisTexte(texte){
   }
   return [...trouves.values()];
 }
+function extraireDepuisHtml(htmlTexte){
+  const doc = new DOMParser().parseFromString(String(htmlTexte || ""), "text/html");
+  let tout = [];
+  doc.querySelectorAll("table").forEach(t => {
+    const rows = Array.from(t.querySelectorAll("tr")).map(tr => Array.from(tr.children).map(td => td.textContent.trim()));
+    tout = tout.concat(extraireDepuisTableau(rows));
+  });
+  doc.querySelectorAll("table").forEach(t => t.remove());
+  return tout.concat(extraireDepuisTexte(doc.body ? (doc.body.innerText || doc.body.textContent) : ""));
+}
 function extraireDepuisTableau(rows){
   rows = rows.map(r => (r || []).map(c => c == null ? "" : String(c)));
   let secCol = -1, numCol = -1, debut = 0;
@@ -1451,8 +1461,9 @@ async function lireFichierCadastre(f){
   }
   if(/\.docx$/.test(nom)){
     await chargerScript("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js");
-    const r = await mammoth.extractRawText({ arrayBuffer: buf });
-    return extraireDepuisTexte(r.value);
+    // Les tableaux Word sont lus ligne par ligne (convertToHtml) : le texte brut sépare chaque cellule par une ligne vide
+    const r = await mammoth.convertToHtml({ arrayBuffer: buf });
+    return extraireDepuisHtml(r.value);
   }
   if(/\.pdf$/.test(nom)){
     await chargerScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
