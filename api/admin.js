@@ -103,7 +103,7 @@ async function sonderUrl(url) {
 
 // ---------- Scaleway Object Storage (signature AWS v4, sans bibliothèque) ----------
 const RUBRIQUES = {
-  1: "Désignation et plans", 2: "Titre", 3: "Exploitation",
+  1: "Désignation et plans", 2: "Origine de propriété", 3: "Exploitation",
   4: "Fiscalité", 5: "Diagnostics", 6: "Organisation de l'immeuble / de la zone",
   7: "Servitudes",   // ajoutée le 02/11 : s'affiche entre Titre et Exploitation (l'ordre d'affichage ne suit pas le numéro)
 };
