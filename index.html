@@ -106,7 +106,7 @@
     padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
   .message.visible{opacity:1}
   /* ---- fiche site (lot 2) ---- */
-  .cases{display:grid;grid-template-columns:1fr;gap:16px}
+  .cases{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   .case{background:var(--papier);border:1px solid var(--trait);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
   .case .titre{padding:12px 16px;border-bottom:1px solid var(--trait);display:flex;align-items:center;gap:10px}
   .case .titre h3{font-size:17px}
@@ -125,7 +125,7 @@
   .case li .copies.partiel{color:var(--orange);border-color:#FFD8AE}
   .case li button{border:0;background:transparent;color:var(--carmin);font-size:13px;padding:2px 6px}
   .case li button:hover{text-decoration:underline}
-  .zone{margin:10px 12px 12px;border:2px dashed #BFCAD6;border-radius:8px;padding:14px;text-align:center;color:var(--gris);font-size:13px;cursor:pointer}
+  .zone{margin:10px 12px 12px;border:2px dashed #BFCAD6;border-radius:8px;padding:14px;min-height:92px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--gris);font-size:13px;cursor:pointer}
   .zone:hover,.zone.survol{border-color:var(--canard);background:#F2F8F9;color:var(--canard)}
   .zone.inactif{cursor:default;opacity:.6}
   .depots{margin:0 12px 12px;display:none;flex-direction:column;gap:6px}
@@ -152,6 +152,10 @@
   .case li .ouvrir{border:0;background:transparent;color:var(--canard);font-size:13px;padding:2px 6px}
   .case li .ouvrir:hover{text-decoration:underline}
   .ligne.cadastre-contenance{grid-template-columns:1.5fr 1fr;align-items:start}
+  .parc-ligne{display:grid;grid-template-columns:88px 1fr auto;gap:8px;margin-bottom:6px;align-items:center}
+  .parc-ligne input{width:100%;padding:9px 10px;border:1px solid var(--trait);border-radius:8px;background:#fff;font:inherit}
+  .parc-ligne .parc-sec{text-transform:uppercase;text-align:center}
+  .zone.zone-import{margin:8px 0 4px;min-height:64px}
   .contenance{display:flex;align-items:center;gap:6px}
   .contenance input[type=number]{width:100%;min-width:0;padding:10px 8px;border:1px solid var(--trait);border-radius:8px;background:#fff;font:inherit;text-align:right}
   .contenance span{color:var(--gris);font-size:13px;margin-right:6px}
@@ -523,7 +527,13 @@
           <div><label for="fs-f-titre">Titre de propriété</label><select id="fs-f-titre" class="liste"></select></div>
         </div>
         <div class="ligne cadastre-contenance">
-          <div><label for="fs-f-cadastre">Références cadastrales</label><input type="text" id="fs-f-cadastre" placeholder="Section AB n° 123, 124"></div>
+          <div>
+            <label>Références cadastrales (une ligne par section)</label>
+            <div id="fs-parcelles"></div>
+            <button type="button" class="mini" onclick="ajouterSection()">+ Ajouter une section</button>
+            <div class="zone zone-import" id="fs-import-cadastre">Glissez ici un tableau (PDF, Word, Excel, CSV) pour importer les sections et numéros, ou cliquez pour choisir</div>
+            <div class="petit" id="fs-import-etat"></div>
+          </div>
           <div>
             <label>Contenance</label>
             <div class="contenance">
@@ -1143,7 +1153,7 @@ function afficherSite(r){
   suffixeCourant = suffixeVille(); $("fs-f-adresse").value = (s.adresse || "") + (s.adresse ? suffixeCourant : "");
   majVille(); basculerVilleManuelle(!(s.code_postal || s.commune));   // code postal et commune : repliés tant qu'ils sont renseignés
   const ct = lireContenance(refs.surface); $("fs-f-ha").value = ct.ha; $("fs-f-a").value = ct.a; $("fs-f-ca").value = ct.ca;
-  $("fs-f-cadastre").value = refs.cadastre || "";
+  { const pc = parserCadastre(refs.cadastre); parcellesLignes = pc.lignes; parcellesLibre = pc.libre; dessinerParcelles(); $("fs-import-etat").textContent = ""; }
   remplirListe("fs-f-nature", NATURES_BIEN, fiche.nature); remplirListe("fs-f-titre", TITRES_PROPRIETE, refs.titre);
   $("fs-f-entree").value = refs.entree || ""; $("fs-f-designation").value = fiche.designation || "";
   basculer("form-site", false);
@@ -1244,6 +1254,160 @@ function majVille(){
   const cp = $("fs-f-cp").value.trim(), c = $("fs-f-commune").value.trim();
   $("fs-ville").innerHTML = (cp || c) ? `<a href="#" onclick="basculerVilleManuelle();return false">corriger le code postal ou la commune</a>` : "";
 }
+// ---------- Références cadastrales : une ligne par section (+), import d'un tableau PDF / Word / Excel / CSV ----------
+let parcellesLignes = [], parcellesLibre = "";
+const MOTS_BRUIT = new Set(["SECTION", "SECTIONS", "PARCELLE", "PARCELLES", "ET", "DE", "DU", "DES", "LA", "LE", "LES", "A", "AU", "LIEUDIT", "LIEU-DIT", "CADASTRE", "CADASTREE", "CADASTREES", "N", "NUMERO", "NUMEROS"]);
+// Relit le texte enregistré (« Section AB n° 123, 124 ; Section AC n° 7 ») en lignes ; un texte non reconnu est conservé tel quel
+function parserCadastre(texte){
+  const brut = String(texte || "").trim();
+  if(!brut) return { lignes: [], libre: "" };
+  const mots = brut.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/N[°º]/g, " ").replace(/[,;/()]/g, " ").split(/\s+/).filter(Boolean);
+  const lignes = []; let cur = null, prec = "", inconnu = false;
+  const groupe = (sec) => { let g = lignes.find(l => l.sec === sec); if(!g){ g = { sec, nums: [] }; lignes.push(g); } return g; };
+  for(const mot of mots){
+    let m;
+    if(prec === "SECTION" && /^[0-9]?[A-Z]{1,2}$/.test(mot)){ cur = groupe(mot); prec = mot; continue; }
+    prec = mot;
+    if(MOTS_BRUIT.has(mot)) continue;
+    if((m = mot.match(/^([0-9]?[A-Z]{1,2})(\d{1,4})$/))){ cur = groupe(m[1]); cur.nums.push(String(parseInt(m[2], 10))); }
+    else if(/^[0-9]?[A-Z]{1,2}$/.test(mot)){ cur = groupe(mot); }
+    else if(/^\d{1,4}$/.test(mot) && cur){ cur.nums.push(String(parseInt(mot, 10))); }
+    else { inconnu = true; break; }
+  }
+  if(inconnu || !lignes.length) return { lignes: [], libre: brut };
+  return { lignes: lignes.map(l => ({ sec: l.sec, nums: [...new Set(l.nums)].join(", ") })), libre: "" };
+}
+function serialiserParcelles(){
+  const p = parcellesLignes.filter(l => l.sec.trim() && l.nums.trim()).map(l => `Section ${l.sec.trim().toUpperCase()} n° ${l.nums.trim()}`);
+  if(parcellesLibre.trim()) p.push(parcellesLibre.trim());
+  return p.join(" ; ");
+}
+function dessinerParcelles(){
+  const c = $("fs-parcelles"); c.innerHTML = "";
+  parcellesLignes.forEach((l, i) => {
+    const d = document.createElement("div"); d.className = "parc-ligne";
+    d.innerHTML = `<input type="text" class="parc-sec" maxlength="3" placeholder="Section" value="${html(l.sec)}" aria-label="Section"><input type="text" class="parc-nums" placeholder="Numéros : 123, 124" value="${html(l.nums)}" aria-label="Numéros"><button type="button" class="mini rouge" title="Retirer cette section">×</button>`;
+    const [s, n, b] = d.children;
+    s.oninput = () => { l.sec = s.value.toUpperCase().replace(/[^0-9A-Z]/g, ""); s.value = l.sec; };
+    n.oninput = () => { l.nums = n.value; };
+    b.onclick = () => { parcellesLignes.splice(i, 1); dessinerParcelles(); };
+    c.appendChild(d);
+  });
+  if(parcellesLibre){
+    const d = document.createElement("div"); d.className = "parc-ligne"; d.style.gridTemplateColumns = "1fr auto";
+    d.innerHTML = `<input type="text" value="${html(parcellesLibre)}" aria-label="Mention libre" title="Mention conservée telle qu'elle avait été saisie"><button type="button" class="mini rouge" title="Retirer">×</button>`;
+    d.children[0].oninput = (e) => { parcellesLibre = e.target.value; };
+    d.children[1].onclick = () => { parcellesLibre = ""; dessinerParcelles(); };
+    c.appendChild(d);
+  }
+  if(!parcellesLignes.length && !parcellesLibre) c.innerHTML = `<div class="petit" style="margin-bottom:6px">Aucune référence : ajoutez une section ou importez un tableau.</div>`;
+}
+function ajouterSection(){
+  parcellesLignes.push({ sec: "", nums: "" }); dessinerParcelles();
+  const secs = document.querySelectorAll("#fs-parcelles .parc-sec"); if(secs.length) secs[secs.length - 1].focus();
+}
+function fusionnerParcelles(paires){
+  let ajoutees = 0;
+  for(const { sec, num } of paires){
+    let l = parcellesLignes.find(x => x.sec.toUpperCase() === sec);
+    if(!l){ l = { sec, nums: "" }; parcellesLignes.push(l); }
+    const liste = l.nums.split(/[,\s;]+/).filter(Boolean);
+    if(!liste.includes(num)){ liste.push(num); l.nums = liste.join(", "); ajoutees++; }
+  }
+  dessinerParcelles();
+  return ajoutees;
+}
+// --- extraction ---
+const MOTS_NON_SECTION = new Set(["LE", "LA", "LES", "DE", "DU", "DES", "ET", "EN", "AU", "AUX", "UN", "UNE", "ON", "OU", "SA", "SE", "CE", "IL", "SI", "NE", "NI", "PAR", "SUR", "ART", "TVA", "NO", "TEL", "FAX", "RN", "RD", "BP", "CP", "ZA", "ZI", "ZAC", "SCI", "SA", "SAS"]);
+function extraireDepuisTexte(texte){
+  texte = String(texte || "");
+  const trouves = new Map();
+  const ajouter = (sec, num) => { sec = String(sec).toUpperCase(); const n = parseInt(num, 10); if(!sec || isNaN(n)) return; trouves.set(sec + " " + n, { sec, num: String(n) }); };
+  // 1) « Section AB n° 123, 124 et 125 »
+  const re1 = /section\s+([0-9]?[A-Za-z]{1,2})\b[^0-9A-Za-z]{0,6}(?:n(?:°|º|o|um[ée]ros?)?\.?\s*)?((?:\d{1,4}(?:\s*(?:,|;|et|\/)\s*)?)+)/gi;
+  let m;
+  while((m = re1.exec(texte))) (m[2].match(/\d{1,4}/g) || []).forEach(n => ajouter(m[1], n));
+  // 2) forme compacte (AB 123, AB123, AB 0123), en majuscules, hors mots courants et hors années
+  const reste = texte.replace(re1, " ");
+  const re2 = /\b([0-9]?[A-Z]{1,2})\s?0*(\d{1,4})\b/g;
+  while((m = re2.exec(reste))){
+    if(MOTS_NON_SECTION.has(m[1])) continue;
+    if(m[2].length === 4 && +m[2] >= 1900 && +m[2] <= 2100) continue;
+    ajouter(m[1], m[2]);
+  }
+  return [...trouves.values()];
+}
+function extraireDepuisTableau(rows){
+  rows = rows.map(r => (r || []).map(c => c == null ? "" : String(c)));
+  let secCol = -1, numCol = -1, debut = 0;
+  for(let i = 0; i < Math.min(rows.length, 10); i++){
+    const r = rows[i].map(c => c.toLowerCase());
+    const s = r.findIndex(c => /section/.test(c)), n = r.findIndex((c, k) => k !== s && /(num[ée]ro|n°|parcelle)/.test(c));
+    if(s >= 0 && n >= 0){ secCol = s; numCol = n; debut = i + 1; break; }
+  }
+  if(secCol >= 0){
+    const out = [];
+    for(let i = debut; i < rows.length; i++){
+      const sec = (rows[i][secCol] || "").trim();
+      if(!/^[0-9]?[A-Za-z]{1,2}$/.test(sec)) continue;
+      ((rows[i][numCol] || "").match(/\d{1,4}/g) || []).forEach(n => out.push({ sec: sec.toUpperCase(), num: String(parseInt(n, 10)) }));
+    }
+    if(out.length) return out;
+  }
+  return extraireDepuisTexte(rows.map(r => r.join("  ")).join("\n"));
+}
+const chargesScripts = {};
+function chargerScript(url){
+  if(!chargesScripts[url]) chargesScripts[url] = new Promise((ok, ko) => {
+    const s = document.createElement("script"); s.src = url; s.onload = ok;
+    s.onerror = () => ko(new Error("Chargement impossible de l'outil de lecture (" + url.split("/")[5] + ")"));
+    document.head.appendChild(s);
+  });
+  return chargesScripts[url];
+}
+async function lireFichierCadastre(f){
+  const nom = f.name.toLowerCase(), buf = await f.arrayBuffer();
+  if(/\.(xlsx|xlsm|xls|ods|csv)$/.test(nom)){
+    await chargerScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+    const wb = XLSX.read(buf, { type: "array" }); let tout = [];
+    wb.SheetNames.forEach(n => { tout = tout.concat(extraireDepuisTableau(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: "" }))); });
+    return tout;
+  }
+  if(/\.docx$/.test(nom)){
+    await chargerScript("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js");
+    const r = await mammoth.extractRawText({ arrayBuffer: buf });
+    return extraireDepuisTexte(r.value);
+  }
+  if(/\.pdf$/.test(nom)){
+    await chargerScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+    const lib = window.pdfjsLib;
+    if(!lib.__worker){
+      const r = await fetch("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js");
+      lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(await r.blob()); lib.__worker = true;
+    }
+    const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise; let texte = "";
+    for(let p = 1; p <= Math.min(pdf.numPages, 40); p++){
+      const c = await (await pdf.getPage(p)).getTextContent();
+      texte += c.items.map(i => i.str + (i.hasEOL ? "\n" : " ")).join("") + "\n";
+    }
+    if(!texte.trim()) throw new Error("PDF sans texte lisible (scan) : saisissez les références à la main.");
+    return extraireDepuisTexte(texte);
+  }
+  if(/\.(txt|md)$/.test(nom)) return extraireDepuisTexte(new TextDecoder().decode(buf));
+  throw new Error("Format non pris en charge : PDF, Word (.docx), Excel, CSV ou texte. Un ancien .doc est à enregistrer en .docx.");
+}
+async function importerCadastre(fichiers){
+  const etat = $("fs-import-etat"); let total = 0; const msg = [];
+  for(const f of Array.from(fichiers || [])){
+    etat.textContent = "Lecture de " + f.name + "…";
+    try{
+      const paires = await lireFichierCadastre(f);
+      const n = fusionnerParcelles(paires); total += n;
+      msg.push(paires.length ? `${f.name} : ${n} parcelle${n > 1 ? "s" : ""} ajoutée${n > 1 ? "s" : ""}` + (n < paires.length ? ` (${paires.length - n} déjà présente${paires.length - n > 1 ? "s" : ""})` : "") : `${f.name} : aucune référence cadastrale reconnue`);
+    }catch(e){ msg.push(`${f.name} : ${e.message}`); }
+  }
+  etat.textContent = msg.join(" · ") + (total ? " — vérifiez les lignes, puis enregistrez." : "");
+}
 // ---------- Listes déroulantes (nature du bien, titre de propriété) : une valeur déjà saisie hors liste est conservée ----------
 const NATURES_BIEN = ["Terrain", "Immeuble", "Lot(s) de copropriété", "Ensemble de bureaux", "Commerce", "Ensemble industriel", "Ensemble à usage scolaire",
   "Entrepôt / plateforme logistique", "Ensemble de logements", "Local d’activité", "Ensemble hôtelier", "Parking / garages",
@@ -1306,6 +1470,14 @@ function choisirSugg(i){
   $("fs-f-adresse").value = f.properties.name + suffixeCourant;
   fermerSugg(); majVille(); basculerVilleManuelle(false);
 }
+(function brancherImportCadastre(){
+  const z = $("fs-import-cadastre");
+  z.onclick = () => { const inp = document.createElement("input"); inp.type = "file"; inp.multiple = true; inp.accept = ".pdf,.docx,.xlsx,.xlsm,.xls,.ods,.csv,.txt"; inp.onchange = () => importerCadastre(inp.files); inp.click(); };
+  z.ondragover = (e) => { e.preventDefault(); z.classList.add("survol"); };
+  z.ondragleave = () => z.classList.remove("survol");
+  z.ondrop = (e) => { e.preventDefault(); z.classList.remove("survol"); importerCadastre(e.dataTransfer.files); };
+  dessinerParcelles();
+})();
 (function brancherSuggestions(){
   const champ = $("fs-f-adresse"), ul = $("fs-sugg");
   champ.addEventListener("input", () => {
@@ -1352,7 +1524,7 @@ async function enregistrerSite(){
       id: siteCourant.site.id,
       nom: $("fs-f-nom").value, adresse: adresseSansSuffixe($("fs-f-adresse").value),
       code_postal: $("fs-f-cp").value, commune: $("fs-f-commune").value,
-      surface: ecrireContenance(), cadastre: $("fs-f-cadastre").value,
+      surface: ecrireContenance(), cadastre: serialiserParcelles(),
       titre: $("fs-f-titre").value, entree: $("fs-f-entree").value, designation: $("fs-f-designation").value, nature: $("fs-f-nature").value
     });
     message("Enregistré.");
