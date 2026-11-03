@@ -167,6 +167,16 @@
   .contenance span{color:var(--gris);font-size:13px;margin-right:6px}
   select.liste{width:100%;padding:10px 12px;border:1px solid var(--trait);border-radius:8px;background:#fff;font:inherit;color:var(--texte)}
   .sugg li .suite{color:var(--gris)}
+  .cadre-grille{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
+  .cadre-gauche{padding:14px 16px 6px;border-right:1px solid var(--trait);min-width:0}
+  .cadre-haut{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+  .cadre-droite{min-width:0}
+  .cadre-droite .plan-site{flex-direction:column;align-items:stretch}
+  .cadre-droite .plan-site .apercu{width:100%}
+  .cadre-droite .titre{flex-wrap:wrap}
+  .cadre-site .ligne.cadastre-contenance{display:flex;flex-wrap:wrap;gap:12px 28px}
+  .cadre-site .ligne.cadastre-contenance > div:first-child{width:330px;max-width:100%}
+  @media (max-width:980px){.cadre-grille{grid-template-columns:1fr}.cadre-gauche{border-right:0;border-bottom:1px solid var(--trait)}}
   .rel-sugg{position:relative}
   .sugg{list-style:none;margin:2px 0 0;padding:4px;background:#fff;border:1px solid var(--trait);border-radius:8px;box-shadow:0 8px 24px rgba(15,34,56,.16);position:absolute;left:0;right:0;top:100%;z-index:30;max-height:270px;overflow:auto}
   .sugg[hidden]{display:none}
@@ -534,7 +544,6 @@
       <h2 id="fs-nom"></h2>
       <span class="petit" id="fs-maj"></span>
       <div class="droite">
-        <button class="btn principal" type="button" id="fs-btn-coordonnees" onclick="basculer('form-site')" title="Adresse, nature, références cadastrales, contenance, titre, date d'entrée : tout ce qui alimente la fiche de synthèse du client">✎ Coordonnées et références</button>
         <button class="interrupteur" type="button" id="fs-btn-autoriser" role="switch" aria-checked="false" onclick="configurerStockage()" title="Vert : le dépôt est autorisé sur les deux comptes de stockage. Rouge : cliquez pour poser l'autorisation (à faire une fois par adresse d'ARGOSAdmin, ou si un dépôt est refusé par le navigateur).">
           <span class="rail"><span class="bouton"></span></span><span id="fs-autoriser-lib">Dépôt : vérification…</span>
         </button>
@@ -551,76 +560,84 @@
     <div class="avert" id="fs-avert-stockage" style="display:none">Le stockage des pièces n'est pas encore configuré : les six variables SCW_* manquent sur Vercel. Le dépôt sera actif dès qu'elles seront posées.</div>
     <div class="resultat-stockage" id="fs-stockage-resultat"></div>
 
-    <div class="bloc">
-      <div class="formulaire-inline" id="form-site">
-        <div class="ligne deux">
-          <div>
-            <label for="fs-f-nom">Nom du site</label>
-            <input type="text" id="fs-f-nom">
-            <label for="fs-f-adresse">Adresse (suggestions au fil de la saisie)</label>
-            <div class="rel-sugg">
-              <input type="text" id="fs-f-adresse" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="fs-sugg" placeholder="Commencez à saisir : 65 rue de Paris La Madeleine">
-              <ul id="fs-sugg" class="sugg" role="listbox" hidden></ul>
-            </div>
-            <div class="petit" id="fs-ville" style="margin-top:4px"></div>
-            <div class="ligne deux" id="fs-ligne-ville" hidden>
-              <div><label for="fs-f-cp">Code postal</label><input type="text" id="fs-f-cp"></div>
-              <div><label for="fs-f-commune">Commune</label><input type="text" id="fs-f-commune"></div>
-            </div>
-          </div>
-          <div><label for="fs-f-nature">Nature du bien</label><select id="fs-f-nature" class="liste"></select></div>
-        </div>
-        <div class="ligne ligne-titre">
-          <div><label for="fs-f-titre">Origine de propriété</label><select id="fs-f-titre" class="liste"></select></div>
-          <div class="acte-colle">
-            <div><label for="fs-f-acte-date">Date de l'acte <span class="facultatif">(facultatif)</span></label><input type="date" id="fs-f-acte-date"></div>
-            <div><label for="fs-f-notaire">Nom du notaire <span class="facultatif">(facultatif)</span></label><input type="text" id="fs-f-notaire" placeholder="Me Dupont"></div>
-          </div>
-        </div>
-        <div class="ligne cadastre-contenance">
-          <div>
-            <label>Références cadastrales (une ligne par section)</label>
-            <div id="fs-parcelles"></div>
-            <button type="button" class="mini" onclick="ajouterSection()">+ Ajouter une section</button>
-            <div class="zone zone-import" id="fs-import-cadastre">Glissez ici un tableau (PDF, Word, Excel, CSV) pour importer les sections et numéros, ou cliquez pour choisir</div>
-            <div class="petit" id="fs-import-etat"></div>
-          </div>
-          <div>
-            <label>Contenance</label>
-            <div class="contenance">
-              <input type="number" min="0" id="fs-f-ha" inputmode="numeric" aria-label="Hectares"><span>ha</span>
-              <input type="number" min="0" max="99" id="fs-f-a" inputmode="numeric" aria-label="Ares"><span>a</span>
-              <input type="number" min="0" max="99" id="fs-f-ca" inputmode="numeric" aria-label="Centiares"><span>ca</span>
-            </div>
-          </div>
-        </div>
-        <label for="fs-f-entree">Date d'entrée dans le patrimoine (reprise dans les caractéristiques de la fiche de synthèse)</label>
-        <input type="date" id="fs-f-entree" style="max-width:220px">
-        <label for="fs-f-designation">Extrait de la désignation (repris en tête de la fiche PDF)</label>
-        <textarea id="fs-f-designation"></textarea>
-        <div class="erreur" id="erreur-site"></div>
-        <div class="actions">
-          <button class="btn" type="button" onclick="enregistrerSite()">Enregistrer</button>
-          <button class="btn second" type="button" onclick="basculer('form-site',false)">Fermer</button>
-        </div>
-      </div>
-      <div class="corps" id="fs-resume"></div>
-    </div>
-
     <div class="avert cadastre" id="fs-avert-cadastre" style="display:none"></div>
 
-    <!-- Plan du site (02/11) : produit par l'étude dans PAINT, déposé ici, repris dans la fiche de synthèse du client -->
-    <div class="bloc" id="fs-bloc-plan">
-      <div class="titre">
-        <h3>Plan du site</h3>
-        <span class="petit">Plan cadastral colorié (image PNG ou JPEG) repris en page 2 de la fiche de synthèse ; sans plan, la fiche prend un extrait provisoire.</span>
-      </div>
-      <div class="corps plan-site">
-        <div class="apercu" id="fs-plan-apercu"><div class="vide-plan">Aucun plan déposé</div></div>
-        <div class="cote">
-          <div class="zone" id="fs-plan-zone">Glissez le plan ici, ou cliquez pour choisir (remplace le plan actuel)</div>
-          <div class="depots" id="depots-plan"></div>
-          <div id="fs-plan-actions"></div>
+    <!-- Cadre du site : à gauche les coordonnées et références (bouton en haut du cadre), à droite le plan du site -->
+    <div class="bloc cadre-site">
+      <div class="cadre-grille">
+        <div class="cadre-gauche">
+          <div class="cadre-haut">
+            <button class="btn principal" type="button" id="fs-btn-coordonnees" onclick="basculer('form-site')" title="Adresse, nature, références cadastrales, contenance, origine de propriété, date d'entrée : tout ce qui alimente la fiche de synthèse du client">✎ Coordonnées et références</button>
+            <span class="petit">Adresse, cadastre, origine de propriété… repris dans la fiche de synthèse.</span>
+          </div>
+      <div class="formulaire-inline" id="form-site">
+          <div class="ligne deux">
+            <div>
+              <label for="fs-f-nom">Nom du site</label>
+              <input type="text" id="fs-f-nom">
+              <label for="fs-f-adresse">Adresse (suggestions au fil de la saisie)</label>
+              <div class="rel-sugg">
+                <input type="text" id="fs-f-adresse" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="fs-sugg" placeholder="Commencez à saisir : 65 rue de Paris La Madeleine">
+                <ul id="fs-sugg" class="sugg" role="listbox" hidden></ul>
+              </div>
+              <div class="petit" id="fs-ville" style="margin-top:4px"></div>
+              <div class="ligne deux" id="fs-ligne-ville" hidden>
+                <div><label for="fs-f-cp">Code postal</label><input type="text" id="fs-f-cp"></div>
+                <div><label for="fs-f-commune">Commune</label><input type="text" id="fs-f-commune"></div>
+              </div>
+            </div>
+            <div><label for="fs-f-nature">Nature du bien</label><select id="fs-f-nature" class="liste"></select></div>
+          </div>
+          <div class="ligne ligne-titre">
+            <div><label for="fs-f-titre">Origine de propriété</label><select id="fs-f-titre" class="liste"></select></div>
+            <div class="acte-colle">
+              <div><label for="fs-f-acte-date">Date de l'acte <span class="facultatif">(facultatif)</span></label><input type="date" id="fs-f-acte-date"></div>
+              <div><label for="fs-f-notaire">Nom du notaire <span class="facultatif">(facultatif)</span></label><input type="text" id="fs-f-notaire" placeholder="Me Dupont"></div>
+            </div>
+          </div>
+          <div class="ligne cadastre-contenance">
+            <div>
+              <label>Références cadastrales (une ligne par section)</label>
+              <div id="fs-parcelles"></div>
+              <button type="button" class="mini" onclick="ajouterSection()">+ Ajouter une section</button>
+              <div class="zone zone-import" id="fs-import-cadastre">Glissez ici un tableau (PDF, Word, Excel, CSV) pour importer les sections et numéros, ou cliquez pour choisir</div>
+              <div class="petit" id="fs-import-etat"></div>
+            </div>
+            <div>
+              <label>Contenance</label>
+              <div class="contenance">
+                <input type="number" min="0" id="fs-f-ha" inputmode="numeric" aria-label="Hectares"><span>ha</span>
+                <input type="number" min="0" max="99" id="fs-f-a" inputmode="numeric" aria-label="Ares"><span>a</span>
+                <input type="number" min="0" max="99" id="fs-f-ca" inputmode="numeric" aria-label="Centiares"><span>ca</span>
+              </div>
+            </div>
+          </div>
+          <label for="fs-f-entree">Date d'entrée dans le patrimoine (reprise dans les caractéristiques de la fiche de synthèse)</label>
+          <input type="date" id="fs-f-entree" style="max-width:220px">
+          <label for="fs-f-designation">Extrait de la désignation (repris en tête de la fiche PDF)</label>
+          <textarea id="fs-f-designation"></textarea>
+          <div class="erreur" id="erreur-site"></div>
+          <div class="actions">
+            <button class="btn" type="button" onclick="enregistrerSite()">Enregistrer</button>
+            <button class="btn second" type="button" onclick="basculer('form-site',false)">Fermer</button>
+          </div>
+        </div>
+          <div class="corps" id="fs-resume"></div>
+        </div>
+        <!-- Plan du site : produit par l'étude dans PAINT, déposé ici, repris dans la fiche de synthèse du client -->
+        <div class="cadre-droite" id="fs-bloc-plan">
+          <div class="titre">
+            <h3>Plan du site</h3>
+            <span class="petit">Plan cadastral colorié (PNG ou JPEG) repris dans la fiche de synthèse ; sans plan, extrait provisoire.</span>
+          </div>
+          <div class="corps plan-site">
+            <div class="apercu" id="fs-plan-apercu"><div class="vide-plan">Aucun plan déposé</div></div>
+            <div class="cote">
+              <div class="zone" id="fs-plan-zone">Glissez le plan ici, ou cliquez pour choisir (remplace le plan actuel)</div>
+              <div class="depots" id="depots-plan"></div>
+              <div id="fs-plan-actions"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
