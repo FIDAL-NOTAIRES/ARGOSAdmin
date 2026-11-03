@@ -631,7 +631,6 @@
             <span class="petit">Plan cadastral colorié (PNG ou JPEG) repris dans la fiche de synthèse ; sans plan, extrait provisoire.</span>
           </div>
           <div class="corps plan-site">
-            <div class="apercu" id="fs-plan-apercu"><div class="vide-plan">Aucun plan déposé</div></div>
             <div class="cote">
               <div class="zone" id="fs-plan-zone">Glissez le plan ici, ou cliquez pour choisir (remplace le plan actuel)</div>
               <div class="depots" id="depots-plan"></div>
@@ -1295,17 +1294,13 @@ function afficherSite(r){
   }
 }
 async function afficherPlan(plan, stockagePret){
-  const ap = $("fs-plan-apercu"), zone = $("fs-plan-zone"), actions = $("fs-plan-actions");
+  const zone = $("fs-plan-zone"), actions = $("fs-plan-actions");
   dessinerDepots("plan");
   if(plan){
-    ap.innerHTML = `<div class="vide-plan">Chargement…</div>`;
     actions.innerHTML = `<span class="petit">${html(plan.intitule || plan.nom_fichier)} · ${tailleFr(plan.taille)} · déposé le ${dateCourte(plan.depose_le)}</span> ` +
       `<button type="button" class="mini" onclick="ouvrirPiece(${plan.id})">Ouvrir</button> <button type="button" class="mini rouge" onclick="supprimerPiece(${plan.id}, 'Plan du site')">Retirer</button>`;
-    try{ const r = await api("piece_lien", { id: plan.id }); ap.innerHTML = `<img src="${r.url}" alt="Plan du site">`; }
-    catch(e){ ap.innerHTML = `<div class="vide-plan">Aperçu indisponible</div>`; }
   } else {
-    ap.innerHTML = `<div class="vide-plan">Aucun plan déposé<br><span class="petit">La fiche du client prend un extrait provisoire.</span></div>`;
-    actions.innerHTML = "";
+    actions.innerHTML = `<span class="petit">Aucun plan déposé : la fiche du client prend un extrait provisoire.</span>`;
   }
   zone.classList.toggle("inactif", !stockagePret);
   zone.textContent = stockagePret ? (plan ? "Glissez un nouveau plan ici pour remplacer l'actuel, ou cliquez pour choisir" : "Glissez le plan ici, ou cliquez pour choisir") : "Dépôt inactif : stockage non configuré";
