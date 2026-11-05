@@ -1244,25 +1244,43 @@ function dessinerInvitation(){
       `<span class="exp">Expéditeur : ${gens.length ? gens.map(g => `<label><input type="radio" name="inv-exp" value="${g.id}" ${g.id === INVIT.exp ? "checked" : ""} onchange="INVIT.exp=${g.id};dessinerInvitation()"> ${html([g.prenom, g.nom].join(" "))} <span class="petit">(${g.role})</span></label>`).join("") : "<em>aucun</em>"}</span></div>` +
     `<div class="tete"><span><strong>À :</strong> ${html(u ? u.courriel : $("fu-courriel").value)}</span><span><strong>Copie :</strong> ${copies.length ? html(copies.join(", ")) : "<em>personne</em>"}</span><span><strong>Objet :</strong> ${html(OBJET_INVITATION)}</span></div>` +
     alertes.map(a => `<div class="alerte">${html(a)}</div>`).join("") +
-    `<div class="apercu" id="fu-apercu">${corps}${signatureHtml(exp)}</div>` +
-    `<div class="actions"><button class="btn" type="button" onclick="copierInvitation()">Copier le message</button>` +
-    `<button class="btn second" type="button" onclick="ouvrirMessagerie()">Ouvrir la messagerie (destinataire, copies et objet remplis)</button></div>`;
+    `<div class="apercu" id="fu-apercu">${corps}<div id="fu-apercu-sig">${signatureHtml(exp)}</div></div>` +
+    `<div class="actions"><button class="btn" type="button" onclick="preparerBrouillon()">Préparer le brouillon du courriel</button>` +
+    `<button class="btn second" type="button" onclick="copierInvitation(true)">Copier le message avec signature</button>` +
+    `<button class="btn second" type="button" onclick="copierInvitation(false)">Copier le message sans signature</button></div>` +
+    `<p class="info" style="padding:0 14px 12px;margin:0">Le brouillon est un fichier à ouvrir d'un double clic : Outlook l'ouvre prêt à envoyer (destinataire, copies, objet, message et signature remplis).</p>`;
+  INVIT.a = u ? u.courriel : String($("fu-courriel").value).trim(); INVIT.copies = copies;
 }
-async function copierInvitation(){
-  const ap = $("fu-apercu"); const htmlMsg = ap.innerHTML, texte = ap.innerText;
+function contenuInvitation(avecSig){
+  const ap = $("fu-apercu").cloneNode(true);
+  if(!avecSig){ const s = ap.querySelector("#fu-apercu-sig"); if(s) s.remove(); }
+  const div = document.createElement("div"); div.style.cssText = "position:fixed;left:-9999px;top:0"; div.appendChild(ap); document.body.appendChild(div);
+  const r = { html: ap.innerHTML, texte: ap.innerText }; div.remove(); return r;
+}
+async function copierInvitation(avecSig){
+  const c = contenuInvitation(avecSig), htmlMsg = c.html, texte = c.texte, ap = $("fu-apercu");
   try{
     await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([htmlMsg], { type: "text/html" }), "text/plain": new Blob([texte], { type: "text/plain" }) })]);
     message("Message copié : collez-le dans le corps du courriel.");
   }catch(e){
+    if(!avecSig){ message("Copie impossible ici : utilisez le bouton avec signature, ou le brouillon."); return; }
     const r = document.createRange(); r.selectNodeContents(ap); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
     try{ document.execCommand("copy"); message("Message copié : collez-le dans le corps du courriel."); }catch{ message("Sélection faite : copiez avec Ctrl + C."); }
   }
 }
-function ouvrirMessagerie(){
-  const u = INVIT.u, gens = rattachesClient();
-  const copies = gens.filter(g => g.id !== INVIT.exp && g.courriel).map(g => g.courriel);
-  const a = (u ? u.courriel : String($("fu-courriel").value).trim());
-  location.href = "mailto:" + encodeURIComponent(a) + "?subject=" + encodeURIComponent(OBJET_INVITATION) + (copies.length ? "&cc=" + encodeURIComponent(copies.join(",")) : "");
+// Brouillon de courriel (.eml marqué « non envoyé ») : Outlook l'ouvre comme un message prêt à partir
+function base64Utf8(s){ const o = new TextEncoder().encode(s); let b = ""; for(let i = 0; i < o.length; i += 0x8000) b += String.fromCharCode.apply(null, o.subarray(i, i + 0x8000)); return btoa(b); }
+function preparerBrouillon(){
+  const c = contenuInvitation(true);
+  const corps = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:'Segoe UI',sans-serif;font-size:10pt;color:#0F2238">${c.html.replace(/<p>/g, '<p style="margin:0 0 10pt">')}</body></html>`;
+  const lignes64 = base64Utf8(corps).replace(/.{1,76}/g, "$&\r\n");
+  const eml = ["X-Unsent: 1", "To: " + INVIT.a, INVIT.copies.length ? "Cc: " + INVIT.copies.join(", ") : null,
+    "Subject: =?UTF-8?B?" + base64Utf8(OBJET_INVITATION) + "?=", "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", lignes64].filter(x => x !== null).join("\r\n");
+  const nom = "Invitation portail - " + (INVIT.u ? [INVIT.u.prenom, INVIT.u.nom].join(" ") : INVIT.a) + ".eml";
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([eml], { type: "message/rfc822" })); a.download = nom.replace(/[\\/:*?"<>|]/g, "");
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  message("Brouillon téléchargé : ouvrez-le d'un double clic, Outlook l'affiche prêt à envoyer.");
 }
 async function enregistrerUtilisateur(){
   $("erreur-utilisateur").textContent = "";
