@@ -568,7 +568,8 @@
     </div>
     <div class="bloc replie">
       <div class="titre"><h3><button type="button" class="plier" aria-expanded="false" onclick="plier(this)"><span class="chev">▸</span>Pièces consultées</button></h3><span class="petit" id="fc-nb-telechargements"></span>
-        <div class="droite"><button class="btn export" type="button" onclick="exporterJournal()" title="Un seul PDF : connexions et pièces consultées">⬇ Exporter en PDF</button></div></div>
+        <div class="droite"><button class="btn export" type="button" onclick="exporterPiecesExcel()" title="Pièces consultées sur la période choisie dans les filtres (personne, du, au)">⬇ Exporter en Excel</button>
+        <button class="btn export" type="button" onclick="exporterJournal()" title="Un seul PDF : connexions et pièces consultées">⬇ Exporter en PDF</button></div></div>
       <table>
         <thead><tr><th>Date et heure</th><th>Personne</th><th>Pièce</th><th class="masque-mobile">Site</th></tr></thead>
         <tbody id="corps-telechargements"></tbody>
@@ -1446,6 +1447,33 @@ async function chargerJournal(){
       tr.innerHTML = `<td>${dateFr(t.horodatage)}</td><td>${html(t.utilisateur_prenom + " " + t.utilisateur_nom)}</td><td>${html(t.nom_fichier)}</td><td class="masque-mobile">${html((t.site || "") + (t.commune ? " · " + t.commune : ""))}</td>`;
       ct.appendChild(tr);
     }
+  }catch(e){ message(e.message); }
+}
+/* 05/11 : export Excel des pièces consultées (filtres personne / du / au de la fiche) */
+function chargerXlsx(){
+  if(window.XLSX) return Promise.resolve();
+  return new Promise((ok, ko) => { const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; s.onload = ok; s.onerror = () => ko(new Error("Bibliothèque Excel indisponible.")); document.head.appendChild(s); });
+}
+async function exporterPiecesExcel(){
+  if(!clientCourant) return;
+  try{
+    const depuis = $("fj-depuis").value, jusqua = $("fj-jusqua").value;
+    const [r] = await Promise.all([api("journal_pieces", { client_id: clientCourant.client.id, utilisateur_id: $("fj-personne").value || 0, depuis, jusqua }), chargerXlsx()]);
+    if(!r.lignes.length){ message("Aucune pièce consultée sur cette période."); return; }
+    const fr = d => d ? d.split("-").reverse().join("/") : "";
+    const periode = depuis || jusqua ? `du ${fr(depuis) || "début"} au ${fr(jusqua) || "ce jour"}` : "toute la période";
+    const entete = [["Pièces consultées — " + clientCourant.client.nom + " — " + periode], [],
+      ["Date", "Heure", "Personne", "Courriel", "Site", "Commune", "Rubrique", "Pièce"]];
+    const lignes = r.lignes.map(l => { const d = new Date(l.horodatage);
+      return [new Date(d.getFullYear(), d.getMonth(), d.getDate()), d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+        [l.utilisateur_prenom, l.utilisateur_nom].filter(Boolean).join(" "), l.utilisateur_courriel || "", l.site || "", l.commune || "", l.rubrique || "", l.piece || ""]; });
+    const ws = XLSX.utils.aoa_to_sheet(entete.concat(lignes), { cellDates: true, dateNF: "dd/mm/yyyy" });
+    ws["!cols"] = [{ wch: 11 }, { wch: 7 }, { wch: 24 }, { wch: 30 }, { wch: 28 }, { wch: 18 }, { wch: 30 }, { wch: 50 }];
+    ws["!autofilter"] = { ref: "A3:H" + (lignes.length + 3) };
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Pièces consultées");
+    const nom = ("Pièces consultées - " + clientCourant.client.nom + " - " + periode).replace(/[\\/:*?"<>|]/g, "-") + ".xlsx";
+    XLSX.writeFile(wb, nom);
+    message(r.lignes.length + " ligne" + (r.lignes.length > 1 ? "s" : "") + " exportée" + (r.lignes.length > 1 ? "s" : "") + ".");
   }catch(e){ message(e.message); }
 }
 function exporterJournal(){
