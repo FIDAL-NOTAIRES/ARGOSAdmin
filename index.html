@@ -252,6 +252,7 @@
   .evenements li{font-size:13.5px;margin:3px 0;white-space:pre-line}
   .lien-copie{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#F6FBFB;border:1px dashed var(--canard);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px}
   .lien-copie code{flex:1;min-width:200px}
+  #corps-utilisateurs td:nth-child(3){min-width:200px}
   .ligne.trois.civ{grid-template-columns:130px 1fr 1fr 1.4fr}
   .invitation{border:1px solid var(--trait);border-radius:8px;margin-top:12px;background:#fff}
   .invitation .tete{padding:10px 14px;border-bottom:1px solid var(--trait);display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;font-size:13px}
@@ -928,7 +929,8 @@ async function creerClient(){
     if(r.deploiement && r.deploiement.erreur) message("Client créé, mais le déploiement a échoué : " + r.deploiement.erreur);
     else if(r.deploiement) message("Client créé, site en cours de déploiement : " + r.deploiement.url);
     else message("Client créé.");
-    ouvrirClient(r.id);
+    await ouvrirClient(r.id);
+    if(r.deploiement && !r.deploiement.erreur || url_site) surveillerSite(r.id);
   }catch(e){ $("erreur-nouveau-client").textContent = e.message; }
 }
 
@@ -960,6 +962,11 @@ function afficherFiche(r){
   $("fc-voyant").className = "voyant grand " + voyantClasse(c);
   $("fc-voyant").title = voyantTexte(c);
   $("fc-sondage").textContent = voyantTexte(c);
+  // 05/11 : site injoignable → avertissement en rouge avant toute communication de l'adresse au client
+  const injoignable = c.url_site && voyantClasse(c) !== "vert";
+  $("fc-sondage").style.color = injoignable ? "#A01040" : "";
+  $("fc-sondage").style.fontWeight = injoignable ? "600" : "";
+  if(injoignable && !SURVEILLANCE[c.id]) $("fc-sondage").textContent += " Site client injoignable : ne communiquez pas l'adresse au client avant vérification.";
   $("fc-etat").className = "etat " + (c.actif ? "actif" : "suspendu");
   $("fc-etat").textContent = c.actif ? "Actif" : "Suspendu depuis le " + dateCourte(c.suspendu_le) + (c.suspension_motif ? " — motif : " + c.suspension_motif : "");
   $("fc-btn-suspendre").textContent = c.actif ? "Suspendre l'accès" : "Rétablir l'accès";
@@ -1348,6 +1355,23 @@ async function traiterEvenement(id, tous){
   try{ await api("evenement_traiter", { id, tous: !!tous, client_id: clientCourant.client.id }); ouvrirClient(clientCourant.client.id); }
   catch(e){ message(e.message); }
 }
+/* 05/11 : après création ou déploiement, ARGOSAdmin interroge le site toutes les 15 secondes pendant 3 minutes */
+const SURVEILLANCE = {};
+async function surveillerSite(id){
+  if(SURVEILLANCE[id]) return; SURVEILLANCE[id] = true;
+  const ecrire = (txt, rouge) => { if(clientCourant && clientCourant.client.id === id){ const z = $("fc-sondage"); z.textContent = txt; z.style.color = rouge ? "#A01040" : "#2E7D32"; z.style.fontWeight = "600"; } };
+  for(let essai = 1; essai <= 12; essai++){
+    ecrire(`Vérification du site client en cours (essai ${essai} sur 12, le déploiement prend une à deux minutes)…`, false);
+    try{
+      const r = await api("client_sonder", { id });
+      if(r.ok === true){ SURVEILLANCE[id] = false; message("Site client joignable : vous pouvez communiquer l'adresse."); if(clientCourant && clientCourant.client.id === id) ouvrirClient(id); return; }
+      if(r.ok === null){ SURVEILLANCE[id] = false; ecrire("Adresse du site client non renseignée : vérification impossible.", true); return; }
+    }catch(e){}
+    await new Promise(f => setTimeout(f, 15000));
+  }
+  SURVEILLANCE[id] = false;
+  ecrire("Site client injoignable après trois minutes : ne communiquez pas l'adresse au client avant vérification.", true);
+}
 async function deployerClient(){
   const code = $("mc-code").value.trim();
   if(!code){ $("erreur-modifier-client").textContent = "Saisissez le nom court (adresse du site)."; return; }
@@ -1356,7 +1380,8 @@ async function deployerClient(){
   try{
     const r = await api("client_deployer", { id: clientCourant.client.id, code });
     message("Site : " + r.url);
-    ouvrirClient(clientCourant.client.id);
+    await ouvrirClient(clientCourant.client.id);
+    surveillerSite(clientCourant.client.id);
   }catch(e){ $("erreur-modifier-client").textContent = e.message; $("mc-deployer").disabled = false; }
 }
 let journalCourant = { connexions: [], telechargements: [] };
