@@ -393,7 +393,9 @@ const actions = {
     const liste = await lireCarnet();
     const court = (p) => ({ id: p.id, civilite: p.civilite, prenom: p.prenom, nom: p.nom, courriel: p.courriel, fonction: p.fonction, service: p.service,
       telephone: p.telephone, portable: p.portable, site: p.site ? p.site.nom : "", site_cp: p.site ? p.site.code_postal : "", site_adresse: p.site ? p.site.adresse : "",
-      sans_signature: !!p.sans_signature });
+      sans_signature: !!p.sans_signature,
+      // 05/11 soir : champs de la signature commune de CARNET (catégorie, deuxième ligne, couleur du nom, téléphone du site)
+      categorie: p.categorie, ligne2: p.ligne2 || "", couleur: p.couleur || "", site_tel: p.site ? p.site.telephone : "" });
     return { associes: liste.filter((p) => p.categorie === "associe").map(court), collaborateurs: liste.filter((p) => p.categorie === "collaborateur").map(court) };
   },
 
