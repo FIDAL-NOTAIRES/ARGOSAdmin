@@ -231,6 +231,48 @@ async function geocoder(adresse, code_postal, commune) {
     return f ? { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] } : null;
   } catch { return null; }
 }
+
+// 05/11 — IMPORT EN MASSE : contrôle cadastral repris d'ARGOS (mêmes règles de lecture des références)
+function normaliserImport(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim(); }
+function parcellesDepuisTexte(texteRefs) {
+  const mots = String(texteRefs || "").toUpperCase().replace(/N[°º]/g, " ").replace(/[,;/()]/g, " ").split(/\s+/).filter(Boolean);
+  const bruit = new Set(["SECTION", "SECTIONS", "PARCELLE", "PARCELLES", "ET", "DE", "DU", "DES", "LA", "LE", "LES", "A", "AU", "LIEUDIT", "LIEU-DIT", "CADASTRE", "CADASTREE", "CADASTREES"]);
+  const out = [], vues = new Set(); let section = null, m, prec = "";
+  for (const mot of mots) {
+    // la lettre « A » est une section valide juste après le mot « Section » (sinon c'est la préposition « à »)
+    if (prec === "SECTION" && /^[0-9]?[A-Z]{1,2}$/.test(mot)) { section = mot; prec = mot; continue; }
+    prec = mot;
+    if (bruit.has(mot)) continue;
+    if ((m = mot.match(/^([0-9]?[A-Z]{1,2})(\d{1,4})$/))) { section = m[1]; }
+    else if (/^[0-9]?[A-Z]{1,2}$/.test(mot)) { section = mot; continue; }
+    else if ((m = mot.match(/^(\d{1,4})$/)) && section) { m = [mot, section, m[1]]; }
+    else continue;
+    const cle = `${m[1]} ${String(parseInt(m[2], 10))}`;
+    if (!vues.has(cle)) { vues.add(cle); out.push({ section: m[1], numero: String(parseInt(m[2], 10)) }); }
+  }
+  return out;
+}
+async function codeInsee(codePostal, commune) {
+  const cp = String(codePostal || "").replace(/\D/g, "");
+  const quete = cp.length === 5 ? `codePostal=${cp}` : (commune ? `nom=${encodeURIComponent(commune)}` : "");
+  if (!quete) return null;
+  const r = await fetch(`https://geo.api.gouv.fr/communes?${quete}&fields=code,nom&limit=20`);
+  if (!r.ok) throw new Error(`geo.api.gouv ${r.status}`);
+  const liste = await r.json();
+  if (!Array.isArray(liste) || !liste.length) return null;
+  if (liste.length === 1) return liste[0].code;
+  const voulu = normaliserImport(commune);
+  const exact = liste.find((c) => normaliserImport(c.nom) === voulu) || liste.find((c) => voulu && normaliserImport(c.nom).includes(voulu));
+  return exact ? exact.code : null;
+}
+async function parcelleExiste(insee, section, numero) {
+  const sec = section.padStart(2, "0"), num = String(numero).padStart(4, "0");
+  const r = await fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?code_insee=${insee}&section=${sec}&numero=${num}`);
+  if (!r.ok) throw new Error(`apicarto ${r.status}`);
+  const g = await r.json();
+  return !!(g.features && g.features.length);
+}
+
 // Vercel : crée le projet du client, branché sur le dépôt ARGOS, avec ses variables, puis lance le déploiement
 async function vercelApi(chemin, methode, corps) {
   const jeton = process.env.VERCEL_JETON;
@@ -520,6 +562,65 @@ const actions = {
       VALUES (${client_id}, ${nom}, ${adresse}, ${commune}, ${code_postal}, ${geo ? geo.lat : null}, ${geo ? geo.lng : null})
       RETURNING id`;
     return { id: ins[0].id, geolocalise: !!geo };
+  },
+
+  // 05/11 — IMPORT EN MASSE DES SITES (modèle Excel à 6 colonnes) : aperçu ligne par ligne, puis création des lignes retenues.
+  // Lots de 10 lignes au plus par appel (le contrôle cadastral interroge le cadastre pour chaque parcelle).
+  async import_verifier(sql, p) {
+    const client_id = entier(p.client_id, 0);
+    const lignes = (Array.isArray(p.lignes) ? p.lignes : []).slice(0, 10);
+    const existants = await sql`SELECT nom, adresse, code_postal FROM argos_site WHERE client_id = ${client_id}`;
+    const cleNom = (x) => normaliserImport(x), cleAdr = (a, cp) => normaliserImport(a) + "|" + String(cp || "").replace(/\D/g, "");
+    const nomsPris = new Set(existants.map((e) => cleNom(e.nom))), adrPrises = new Set(existants.filter((e) => e.adresse).map((e) => cleAdr(e.adresse, e.code_postal)));
+    const inseeCache = {};
+    const sortie = [];
+    for (const l of lignes) {
+      const motifs = [], avis = [];
+      const nom = texte(l.nom, 160), adresse = texte(l.adresse, 300), cp = texte(l.code_postal, 10), commune = texte(l.commune, 120), cadastre = texte(l.cadastre, 4000);
+      const manque = [!nom && "nom", !adresse && "adresse", !cp && "code postal", !commune && "commune"].filter(Boolean);
+      if (manque.length) { sortie.push({ etat: "rouge", forcable: false, motifs: ["Champ manquant : " + manque.join(", ")] }); continue; }
+      if (nomsPris.has(cleNom(nom)) || adrPrises.has(cleAdr(adresse, cp))) avis.push("Doublon possible d'un site existant (même nom ou même adresse)");
+      const parcelles = parcellesDepuisTexte(cadastre);
+      if (!cadastre) motifs.push("Références cadastrales absentes");
+      else if (!parcelles.length) motifs.push("Références cadastrales illisibles");
+      else {
+        try {
+          const k = cp + "|" + commune;
+          if (!(k in inseeCache)) inseeCache[k] = await codeInsee(cp, commune);
+          const insee = inseeCache[k];
+          if (!insee) motifs.push("Commune introuvable (code postal et commune à vérifier)");
+          else {
+            const manquantes = [];
+            for (let i0 = 0; i0 < Math.min(parcelles.length, 30); i0 += 6) {
+              const r = await Promise.all(parcelles.slice(i0, Math.min(i0 + 6, 30)).map((pc) => parcelleExiste(insee, pc.section, pc.numero).then((e) => ({ pc, e }))));
+              r.forEach((x) => { if (x.e === false) manquantes.push(`${x.pc.section} ${x.pc.numero}`); });
+            }
+            if (manquantes.length) motifs.push(`Parcelle${manquantes.length > 1 ? "s" : ""} introuvable${manquantes.length > 1 ? "s" : ""} au cadastre : ${manquantes.join(", ")}`);
+          }
+        } catch (e) { motifs.push("Cadastre injoignable : contrôle non conclusif"); }
+      }
+      sortie.push({ etat: motifs.length ? "rouge" : avis.length ? "orange" : "vert", forcable: true, motifs: motifs.concat(avis), parcelles: parcelles.length });
+    }
+    return { resultats: sortie };
+  },
+
+  async import_creer(sql, p) {
+    const client_id = entier(p.client_id, 0);
+    const lignes = (Array.isArray(p.lignes) ? p.lignes : []).slice(0, 10);
+    const crees = [];
+    for (const l of lignes) {
+      const nom = texte(l.nom, 160), adresse = texte(l.adresse, 300), cp = texte(l.code_postal, 10), commune = texte(l.commune, 120);
+      if (!nom || !adresse || !cp || !commune) continue;
+      const geo = await geocoder(adresse, cp, commune);
+      const references_ = { cadastre: texte(l.cadastre, 4000), surface: "", titre: "", acte_date: "", notaire: "", entree: "" };
+      const fiche = { designation: "", nature: texte(l.nature, 80) };
+      const ins = await sql`
+        INSERT INTO argos_site (client_id, nom, adresse, commune, code_postal, lat, lng, references_, fiche)
+        VALUES (${client_id}, ${nom}, ${adresse}, ${commune}, ${cp}, ${geo ? geo.lat : null}, ${geo ? geo.lng : null}, ${JSON.stringify(references_)}::jsonb, ${JSON.stringify(fiche)}::jsonb)
+        RETURNING id`;
+      crees.push({ id: ins[0].id, geolocalise: !!geo });
+    }
+    return { crees };
   },
 
   async site_supprimer(sql, p) {
