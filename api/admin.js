@@ -191,7 +191,7 @@ function nomFichierPropre(nom) {
 // ---------- LOT 3 : liens d'activation, courriels, géocodage, Vercel ----------
 const DUREE_LIEN_MS = 48 * 60 * 60 * 1000; // 48 heures
 async function lienActivation(sql, utilisateurId, objet, req) {
-  const u = await sql`SELECT u.id, u.courriel, u.nom, u.prenom, c.nom AS client_nom, c.url_site, c.id AS client_id FROM argos_utilisateur u JOIN argos_client c ON c.id = u.client_id WHERE u.id = ${utilisateurId}`;
+  const u = await sql`SELECT u.id, u.courriel, u.civilite, u.nom, u.prenom, c.nom AS client_nom, c.url_site, c.id AS client_id FROM argos_utilisateur u JOIN argos_client c ON c.id = u.client_id WHERE u.id = ${utilisateurId}`;
   if (!u.length) throw new Error("Utilisateur introuvable.");
   const jeton = crypto.randomBytes(24).toString("base64url");
   await sql`UPDATE argos_utilisateur SET activation_hachage = ${crypto.createHash("sha256").update(jeton).digest("hex")}, activation_expire = ${new Date(Date.now() + DUREE_LIEN_MS)}, activation_objet = ${objet}, maj_le = NOW() WHERE id = ${utilisateurId}`;
@@ -199,9 +199,12 @@ async function lienActivation(sql, utilisateurId, objet, req) {
   if (!base) throw new Error("L'adresse du site client n'est pas renseignée : créez d'abord le site (bouton « Déployer le site »).");
   const route = objet === "activation" ? "activation" : objet;
   const url = `${base}/#${route}/${jeton}`;
-  const objetMail = objet === "activation" ? "Votre accès au portail patrimoine FIDAL Notaires" : objet === "code" ? "Portail FIDAL Notaires : nouveau code secret" : "Portail FIDAL Notaires : nouveau mot de passe";
+  const objetMail = objet === "activation" ? "Votre accès au portail du patrimoine foncier FIDAL Notaires" : objet === "code" ? "Portail FIDAL Notaires : nouveau code secret" : "Portail FIDAL Notaires : nouveau mot de passe";
+  // 05/11 : texte validé phrase par phrase le 04/11 (civilité, élision « d' » devant une voyelle)
+  const appel = u[0].civilite === "Madame" ? "Chère Madame," : u[0].civilite === "Monsieur" ? "Cher Monsieur," : "Madame, Monsieur,";
+  const deClient = (/^[aeiouyàâäéèêëîïôöùûü]/i.test(String(u[0].client_nom || "").trim()) ? "d'" : "de ") + u[0].client_nom;
   const corps = objet === "activation"
-    ? `Bonjour ${u[0].prenom} ${u[0].nom},\n\nVous êtes invité par FIDAL NOTAIRES à accéder au portail du patrimoine foncier de votre société.\n\nLe lien ci-dessous est valable quarante-huit heures et ne sert qu'une fois :\n${url}\n\nActiver mon accès : ${url}\n\nFIDAL Notaires`
+    ? `${appel}\n\nVous êtes invité${u[0].civilite === "Madame" ? "e" : ""} par FIDAL NOTAIRES à accéder au portail du patrimoine foncier ${deClient}.\n\nPour activer votre accès, merci de cliquer sur le lien ci-dessous. Ce lien restera valable pour une durée de quarante-huit heures et il est à usage unique. Il vous permettra de paramétrer votre compte en choisissant un mot de passe et un code secret à six chiffres, pour valider votre identité avec votre téléphone.\n\n${url}\n\nSi ce lien a expiré ou ne fonctionne plus, n'hésitez pas à revenir vers nous pour que nous vous adressions un nouveau lien d'accès.\n\nNous restons à votre disposition pour toute demande,\n\nVotre bien dévoué,\n\nFIDAL Notaires`
     : `Bonjour ${u[0].prenom} ${u[0].nom},\n\nÀ votre demande, FIDAL Notaires vous invite à choisir ${objet === "code" ? "un nouveau code secret" : "un nouveau mot de passe"} pour le portail du patrimoine foncier de votre société.\n\nLe lien ci-dessous est valable quarante-huit heures et ne sert qu'une fois :\n${url}\n\nFIDAL Notaires`;
   const envoye = await envoyerCourriel(sql, u[0].client_id, [u[0].courriel], objetMail, corps);
   return { url, envoye };
@@ -346,8 +349,9 @@ const actions = {
   // 05/11 : personnes de CARNET proposées dans la fiche client (actifs seulement)
   async carnet_personnes() {
     const liste = await lireCarnet();
-    const court = (p) => ({ id: p.id, civilite: p.civilite, prenom: p.prenom, nom: p.nom, courriel: p.courriel, fonction: p.fonction,
-      site: p.site ? p.site.nom : "", sans_signature: !!p.sans_signature });
+    const court = (p) => ({ id: p.id, civilite: p.civilite, prenom: p.prenom, nom: p.nom, courriel: p.courriel, fonction: p.fonction, service: p.service,
+      telephone: p.telephone, portable: p.portable, site: p.site ? p.site.nom : "", site_cp: p.site ? p.site.code_postal : "", site_adresse: p.site ? p.site.adresse : "",
+      sans_signature: !!p.sans_signature });
     return { associes: liste.filter((p) => p.categorie === "associe").map(court), collaborateurs: liste.filter((p) => p.categorie === "collaborateur").map(court) };
   },
 
@@ -419,7 +423,7 @@ const actions = {
       FROM argos_site s WHERE s.client_id = ${id}
       ORDER BY s.commune, s.nom, s.id`;
     const utilisateurs = await sql`
-      SELECT u.id, u.courriel, u.nom, u.prenom, u.role, u.active, u.bloque_jusqua, u.cree_le, u.active_le, u.conditions_le, u.suspendu_le,
+      SELECT u.id, u.courriel, u.civilite, u.nom, u.prenom, u.role, u.active, u.bloque_jusqua, u.cree_le, u.active_le, u.conditions_le, u.suspendu_le,
              u.coupe_par_responsable, u.pause_volume, u.derniere_connexion, u.activation_expire, u.activation_objet,
              (SELECT COALESCE(json_agg(json_build_object('id', a.id, 'libelle', a.libelle, 'type', a.type, 'vu_le', a.vu_le) ORDER BY a.vu_le DESC), '[]'::json) FROM argos_appareil a WHERE a.utilisateur_id = u.id) AS appareils,
              (SELECT COALESCE(json_agg(e.site_id), '[]'::json) FROM argos_site_exclu e WHERE e.utilisateur_id = u.id) AS sites_exclus
@@ -706,8 +710,9 @@ const actions = {
     const nom = texte(p.nom, 80), prenom = texte(p.prenom, 80), courriel = texte(p.courriel, 200).toLowerCase();
     if (!nom || !prenom || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(courriel)) throw new Error("Nom, prénom et courriel valide sont obligatoires.");
     const role = p.responsable ? "responsable" : "lecture";
-    const ins = await sql`INSERT INTO argos_utilisateur (client_id, courriel, nom, prenom, role, active)
-                          VALUES (${client_id}, ${courriel}, ${nom}, ${prenom}, ${role}, FALSE) RETURNING id`;
+    const civilite = ["Monsieur", "Madame"].includes(p.civilite) ? p.civilite : null;
+    const ins = await sql`INSERT INTO argos_utilisateur (client_id, courriel, civilite, nom, prenom, role, active)
+                          VALUES (${client_id}, ${courriel}, ${civilite}, ${nom}, ${prenom}, ${role}, FALSE) RETURNING id`;
     const id = ins[0].id;
     const exclus = Array.isArray(p.sites_exclus) ? p.sites_exclus.map((x) => entier(x, 0)).filter(Boolean) : [];
     for (const site_id of exclus) await sql`INSERT INTO argos_site_exclu (utilisateur_id, site_id) VALUES (${id}, ${site_id}) ON CONFLICT DO NOTHING`;
@@ -719,7 +724,8 @@ const actions = {
     const id = entier(p.id, 0);
     const nom = texte(p.nom, 80), prenom = texte(p.prenom, 80);
     const role = p.responsable ? "responsable" : "lecture";
-    await sql`UPDATE argos_utilisateur SET nom = ${nom}, prenom = ${prenom}, role = ${role}, maj_le = NOW() WHERE id = ${id}`;
+    const civilite = ["Monsieur", "Madame"].includes(p.civilite) ? p.civilite : null;
+    await sql`UPDATE argos_utilisateur SET civilite = ${civilite}, nom = ${nom}, prenom = ${prenom}, role = ${role}, maj_le = NOW() WHERE id = ${id}`;
     await sql`DELETE FROM argos_site_exclu WHERE utilisateur_id = ${id}`;
     const exclus = Array.isArray(p.sites_exclus) ? p.sites_exclus.map((x) => entier(x, 0)).filter(Boolean) : [];
     for (const site_id of exclus) await sql`INSERT INTO argos_site_exclu (utilisateur_id, site_id) VALUES (${id}, ${site_id}) ON CONFLICT DO NOTHING`;
