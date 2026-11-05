@@ -830,6 +830,24 @@ const actions = {
     return { connexions: lignes, telechargements };
   },
 
+  // 05/11 : export Excel du journal des pièces consultées sur une période (sans plafond de 500 lignes)
+  async journal_pieces(sql, p) {
+    const client_id = entier(p.client_id, 0);
+    const utilisateur_id = entier(p.utilisateur_id, 0) || null;
+    const depuis = p.depuis ? new Date(p.depuis) : null, jusqua = p.jusqua ? new Date(p.jusqua + "T23:59:59") : null;
+    const lignes = await sql`
+      SELECT t.horodatage, u.prenom AS utilisateur_prenom, u.nom AS utilisateur_nom, u.courriel AS utilisateur_courriel,
+             s.nom AS site, s.commune, p.rubrique, COALESCE(NULLIF(p.intitule, ''), p.nom_fichier) AS piece
+      FROM argos_telechargement t JOIN argos_utilisateur u ON u.id = t.utilisateur_id
+      JOIN argos_piece p ON p.id = t.piece_id JOIN argos_site s ON s.id = p.site_id
+      WHERE u.client_id = ${client_id}
+        AND (${utilisateur_id}::int IS NULL OR t.utilisateur_id = ${utilisateur_id})
+        AND (${depuis}::timestamptz IS NULL OR t.horodatage >= ${depuis})
+        AND (${jusqua}::timestamptz IS NULL OR t.horodatage <= ${jusqua})
+      ORDER BY t.horodatage DESC LIMIT 50000`;
+    return { lignes: lignes.map((l) => ({ ...l, rubrique: RUBRIQUES[l.rubrique] || "" })) };
+  },
+
   // ===== LOT 4 (02/11/2026) — échéances techniques =====
   async echeances(sql) {
     const lignes = await sql`SELECT id, libelle, echeance, note, fait_le, rappel_envoye_le, cree_le FROM argos_echeance ORDER BY fait_le NULLS FIRST, echeance`;
