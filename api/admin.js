@@ -464,6 +464,11 @@ const actions = {
       SET nom = ${nom}, url_site = ${url_site}, code = ${code}, seuil_heure_alerte = ${seuil_heure_alerte}, seuil_heure_pause = ${seuil_heure_pause}, seuil_jour = ${seuil_jour},
           associes = ${JSON.stringify(associes)}::jsonb, collaborateurs = ${JSON.stringify(collaborateurs)}::jsonb, maj_le = NOW()
       WHERE id = ${id}`;
+    // 05/11 : coordonnées du premier associé, lues dans CARNET, recopiées pour le portail (boutons « Demander un rappel » et « remise en service »)
+    try {
+      const a = (await lireCarnet()).find((x) => x.id === associes[0]);
+      if (a && a.courriel) await sql`UPDATE argos_client SET contact_associe = ${JSON.stringify({ prenom: a.prenom || "", nom: a.nom || "", courriel: a.courriel })}::jsonb WHERE id = ${id}`;
+    } catch (e) { console.error("[carnet] contact associé", e.message); }
     return { ok: true };
   },
 
