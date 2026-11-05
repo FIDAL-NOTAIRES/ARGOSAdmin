@@ -961,7 +961,7 @@ function afficherFiche(r){
   $("fc-voyant").title = voyantTexte(c);
   $("fc-sondage").textContent = voyantTexte(c);
   $("fc-etat").className = "etat " + (c.actif ? "actif" : "suspendu");
-  $("fc-etat").textContent = c.actif ? "Actif" : "Suspendu depuis le " + dateCourte(c.suspendu_le);
+  $("fc-etat").textContent = c.actif ? "Actif" : "Suspendu depuis le " + dateCourte(c.suspendu_le) + (c.suspension_motif ? " — motif : " + c.suspension_motif : "");
   $("fc-btn-suspendre").textContent = c.actif ? "Suspendre l'accès" : "Rétablir l'accès";
   $("fc-btn-suspendre").className = "btn " + (c.actif ? "danger" : "orange");
 
@@ -1075,12 +1075,13 @@ async function enregistrerClient(){
 }
 async function suspendreClient(){
   const c = clientCourant.client;
-  const question = c.actif
-    ? `Suspendre l'accès de toute l'équipe de ${c.nom} ? Les pièces restent en place ; rétablissement d'un clic.`
-    : `Rétablir l'accès de ${c.nom} ?`;
-  if(!confirm(question)) return;
+  let motif = "";
+  if(c.actif){
+    motif = demanderMotif(`Suspendre l'accès de toute l'équipe de ${c.nom} ? Les pièces restent en place ; rétablissement d'un clic.`);
+    if(motif === null) return;
+  } else if(!confirm(`Rétablir l'accès de ${c.nom} ?`)) return;
   try{
-    await api("client_suspendre", { id: c.id, actif: !c.actif });
+    await api("client_suspendre", { id: c.id, actif: !c.actif, motif });
     message(c.actif ? "Accès suspendu." : "Accès rétabli.");
     ouvrirClient(c.id);
   }catch(e){ message(e.message); }
@@ -1114,7 +1115,7 @@ const RESULTATS = { ok: "Réussie", echec: "Échouée", bloque: "Bloquée", nouv
 function libelleNature(n){ return NATURES[n] || n; }
 function etatUtilisateur(u){
   if(u.coupe_par_responsable) return ["coupe", "Coupé par le responsable le " + dateCourte(u.coupe_par_responsable)];
-  if(u.suspendu_le) return ["suspendu", "Suspendu le " + dateCourte(u.suspendu_le)];
+  if(u.suspendu_le) return ["suspendu", "Suspendu le " + dateCourte(u.suspendu_le) + (u.suspension_motif ? " — motif : " + u.suspension_motif : "")];
   if(u.pause_volume) return ["suspendu", "En pause (volume inhabituel) depuis le " + dateFr(u.pause_volume)];
   if(u.bloque_jusqua && new Date(u.bloque_jusqua) > new Date()) return ["suspendu", "Suspendu 48 h jusqu'au " + dateFr(u.bloque_jusqua)];
   if(!u.active_le) return ["attente", u.activation_expire && new Date(u.activation_expire) > new Date() ? "En attente d'activation (lien valable jusqu'au " + dateFr(u.activation_expire) + ")" : "En attente d'activation (lien expiré)"];
@@ -1310,9 +1311,21 @@ async function lienUtilisateur(id, objet){
     message(r.envoye ? "Lien envoyé." : "Lien prêt à copier.");
   }catch(e){ message(e.message); }
 }
+// 05/11 : motif obligatoire de suspension (client ou utilisateur), jamais montré au client
+function demanderMotif(question){
+  let m = "";
+  while(true){
+    m = prompt(question + "\n\nMotif de la suspension (obligatoire, jamais montré au client) :", m);
+    if(m === null) return null;
+    m = m.trim(); if(m) return m;
+    alert("Le motif est obligatoire.");
+  }
+}
 async function suspendreUtilisateur(id, suspendre){
-  if(!confirm(suspendre ? "Suspendre cet accès ? Les sessions ouvertes sont fermées." : "Rétablir cet accès ?")) return;
-  try{ await api("utilisateur_suspendre", { id, suspendre }); message(suspendre ? "Accès suspendu." : "Accès rétabli."); ouvrirClient(clientCourant.client.id); }
+  let motif = "";
+  if(suspendre){ motif = demanderMotif("Suspendre cet accès ? Les sessions ouvertes sont fermées."); if(motif === null) return; }
+  else if(!confirm("Rétablir cet accès ?")) return;
+  try{ await api("utilisateur_suspendre", { id, suspendre, motif }); message(suspendre ? "Accès suspendu." : "Accès rétabli."); ouvrirClient(clientCourant.client.id); }
   catch(e){ message(e.message); }
 }
 async function supprimerUtilisateur(id){
