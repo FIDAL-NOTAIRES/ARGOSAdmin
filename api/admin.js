@@ -199,13 +199,14 @@ async function lienActivation(sql, utilisateurId, objet, req) {
   if (!base) throw new Error("L'adresse du site client n'est pas renseignée : créez d'abord le site (bouton « Déployer le site »).");
   const route = objet === "activation" ? "activation" : objet;
   const url = `${base}/#${route}/${jeton}`;
-  const objetMail = objet === "activation" ? "Votre accès au portail du patrimoine foncier FIDAL Notaires" : objet === "code" ? "Portail FIDAL Notaires : nouveau code secret" : "Portail FIDAL Notaires : nouveau mot de passe";
+  const objetMail = objet === "activation" ? "Votre accès au portail du patrimoine foncier FIDAL Notaires" : "Réinitialisation de votre accès au portail du patrimoine foncier FIDAL Notaires";
   // 05/11 : texte validé phrase par phrase le 04/11 (civilité, élision « d' » devant une voyelle)
   const appel = u[0].civilite === "Madame" ? "Chère Madame," : u[0].civilite === "Monsieur" ? "Cher Monsieur," : "Madame, Monsieur,";
   const deClient = (/^[aeiouyàâäéèêëîïôöùûü]/i.test(String(u[0].client_nom || "").trim()) ? "d'" : "de ") + u[0].client_nom;
   const corps = objet === "activation"
     ? `${appel}\n\nVous êtes invité${u[0].civilite === "Madame" ? "e" : ""} par FIDAL NOTAIRES à accéder au portail du patrimoine foncier ${deClient}.\n\nPour activer votre accès, merci de cliquer sur le lien ci-dessous. Ce lien restera valable pour une durée de quarante-huit heures et il est à usage unique. Il vous permettra de paramétrer votre compte en choisissant un mot de passe et un code secret à six chiffres, pour valider votre identité avec votre téléphone.\n\n${url}\n\nSi ce lien a expiré ou ne fonctionne plus, n'hésitez pas à revenir vers nous pour que nous vous adressions un nouveau lien d'accès.\n\nNous restons à votre disposition pour toute demande,\n\nVotre bien dévoué,\n\nFIDAL Notaires`
-    : `Bonjour ${u[0].prenom} ${u[0].nom},\n\nÀ votre demande, FIDAL Notaires vous invite à choisir ${objet === "code" ? "un nouveau code secret" : "un nouveau mot de passe"} pour le portail du patrimoine foncier de votre société.\n\nLe lien ci-dessous est valable quarante-huit heures et ne sert qu'une fois :\n${url}\n\nFIDAL Notaires`;
+    // 05/11 soir (vocal) : message de réinitialisation validé phrase par phrase
+    : `${appel}\n\nSuite à votre demande, vous trouverez ci-dessous un lien pour réinitialiser ${objet === "code" ? "votre code secret à six chiffres" : "votre mot de passe"} d'accès au portail du patrimoine foncier ${deClient}.\n\nCe lien est à usage unique et restera valable pendant quarante-huit heures.\n\n${url}\n\nSi ce lien a expiré ou ne fonctionne plus, n'hésitez pas à revenir vers nous pour que nous vous adressions un nouveau lien.\n\nSi vous n'êtes pas à l'origine de cette demande, merci de nous en informer sans délai.\n\nNous restons à votre disposition pour toute demande,\n\nVotre bien dévoué,\n\nFIDAL Notaires`;
   const envoye = await envoyerCourriel(sql, u[0].client_id, [u[0].courriel], objetMail, corps);
   return { url, envoye };
 }
