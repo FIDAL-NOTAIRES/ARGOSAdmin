@@ -372,6 +372,19 @@ const actions = {
     return { clients: lignes, alertes: alertes[0].n, echeances };
   },
 
+  // 05/11 : sondage d'un seul client (après création ou déploiement de son site)
+  async client_sonder(sql, p) {
+    const id = entier(p.id, 0);
+    const c = await sql`SELECT id, url_site FROM argos_client WHERE id = ${id}`;
+    if (!c.length) throw new Error("Client introuvable.");
+    const r = await sonderUrl(c[0].url_site);
+    if (r.ok === true) await sql`INSERT INTO argos_sondage (client_id, dernier_ok, message, version) VALUES (${id}, NOW(), '', ${r.version || null})
+                                 ON CONFLICT (client_id) DO UPDATE SET dernier_ok = NOW(), message = '', version = ${r.version || null}`;
+    else if (r.ok === false) await sql`INSERT INTO argos_sondage (client_id, dernier_echec, message) VALUES (${id}, NOW(), ${r.message})
+                                       ON CONFLICT (client_id) DO UPDATE SET dernier_echec = NOW(), message = ${r.message}`;
+    return { ok: r.ok, message: r.message };
+  },
+
   async sonder(sql) {
     const clients = await sql`SELECT id, url_site FROM argos_client ORDER BY id`;
     const resultats = await Promise.all(clients.map(async (c) => {
