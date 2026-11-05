@@ -3,7 +3,8 @@
     { "path": "/api/ronde", "schedule": "0 3 * * *" }
   ],
   "functions": {
-    "api/ronde.js": { "maxDuration": 60 }
+    "api/ronde.js": { "maxDuration": 60 },
+    "api/admin.js": { "maxDuration": 60 }
   },
   "headers": [
     {
