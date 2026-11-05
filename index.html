@@ -204,6 +204,10 @@
   /* ---- lot 3 ---- */
   .etat.attente{color:var(--orange);border-color:#FFD8AE;background:#FFF6E8}
   .etat.coupe{color:var(--carmin);border-color:#F0C3D0;background:#FBEDF1}
+  .rattaches select{width:100%;margin-bottom:6px}
+  .rattache-ligne{display:flex;gap:6px;align-items:center}
+  .rattache-ligne select{flex:1}
+  .rattache-ligne .retirer{border:0;background:none;color:var(--carmin, #A01040);cursor:pointer;font-size:16px;padding:0 4px;margin-bottom:6px}
   .mini{border:1px solid var(--trait);background:#fff;color:var(--canard);border-radius:6px;padding:3px 8px;font-size:12.5px;margin:2px 2px 2px 0}
   .mini:hover{background:#EEF6F7}
   .mini.rouge{color:var(--carmin);border-color:#F0C3D0}
@@ -385,6 +389,7 @@
         <button class="btn danger" type="button" id="fc-btn-suspendre" onclick="suspendreClient()"></button>
       </div>
     </div>
+    <p class="petit" id="fc-rattaches"></p>
     <p class="petit" id="fc-sondage"></p>
     <div class="evenements" id="fc-evenements" style="display:none"></div>
 
@@ -424,6 +429,19 @@
             <p class="info" style="margin:4px 0 0">Le critère de proportion (plus de la moitié des pièces en une semaine) déclenche une alerte simple, non réglable.</p>
           </div>
         </div>
+        <div class="ligne deux rattaches">
+          <div>
+            <label>Associé(s) rattaché(s) <span class="info">— au moins un, il est alerté en cas de difficulté</span></label>
+            <div id="mc-associes"></div>
+            <button class="mini" type="button" onclick="ajouterRattache('associes')">+ Ajouter un associé</button>
+          </div>
+          <div>
+            <label>Collaborateur(s) rattaché(s) <span class="info">— facultatif</span></label>
+            <div id="mc-collaborateurs"></div>
+            <button class="mini" type="button" onclick="ajouterRattache('collaborateurs')">+ Ajouter un collaborateur</button>
+          </div>
+        </div>
+        <p class="info" id="mc-carnet-etat"></p>
         <label>Clé de lecture donnée au site client</label>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <code id="mc-cle">••••••••••••••••••••</code>
@@ -943,6 +961,8 @@ function afficherFiche(r){
   $("mc-seuil-alerte").value = c.seuil_heure_alerte || 20;
   $("mc-seuil-pause").value = c.seuil_heure_pause || 50;
   $("mc-seuil-jour").value = c.seuil_jour || 100;
+  RATTACHES = { associes: (c.associes || []).slice(), collaborateurs: (c.collaborateurs || []).slice() };
+  afficherRattaches(c);
   cleVisible = false; rendreCle();
   basculer("form-modifier-client", false);
   basculer("form-nouveau-site", false);
@@ -988,13 +1008,56 @@ async function regenererCle(){
     message("Nouvelle clé générée.");
   }catch(e){ $("erreur-modifier-client").textContent = e.message; }
 }
+/* ---------- 05/11 : associés et collaborateurs rattachés au client, choisis dans CARNET ---------- */
+let CARNET_P = null, RATTACHES = { associes: [], collaborateurs: [] };
+async function chargerCarnet(){
+  if(CARNET_P) return CARNET_P;
+  try{ CARNET_P = await api("carnet_personnes", {}); $("mc-carnet-etat").textContent = ""; }
+  catch(e){ CARNET_P = { associes: [], collaborateurs: [], erreur: e.message }; $("mc-carnet-etat").textContent = "CARNET indisponible : " + e.message; }
+  return CARNET_P;
+}
+function nomPersonne(p){ return [p.prenom, p.nom].filter(Boolean).join(" ") + (p.site ? " — " + p.site : ""); }
+function trouverPersonne(type, id){ return CARNET_P && (CARNET_P[type] || []).find(p => p.id === id); }
+function libelleRattaches(c){
+  const noms = (type, ids) => (ids || []).map(id => { const p = trouverPersonne(type, id); return p ? [p.prenom, p.nom].join(" ") : "n° " + id + " (inactif ou retiré de CARNET)"; });
+  const a = noms("associes", c.associes), k = noms("collaborateurs", c.collaborateurs);
+  return a.length ? `<strong>Associé${a.length > 1 ? "s" : ""} :</strong> ${html(a.join(", "))}` + (k.length ? ` &nbsp;·&nbsp; <strong>Collaborateur${k.length > 1 ? "s" : ""} :</strong> ${html(k.join(", "))}` : "")
+                  : `<span style="color:#A01040;font-weight:600">Aucun associé rattaché — à compléter dans « Modifier »</span>`;
+}
+async function afficherRattaches(c){
+  $("fc-rattaches").innerHTML = "";
+  await chargerCarnet();
+  if(!clientCourant || clientCourant.client.id !== c.id) return;
+  $("fc-rattaches").innerHTML = libelleRattaches(c);
+  dessinerRattaches("associes"); dessinerRattaches("collaborateurs");
+}
+function dessinerRattaches(type){
+  const zone = $("mc-" + type), liste = (CARNET_P && CARNET_P[type]) || [];
+  const ids = RATTACHES[type].length ? RATTACHES[type] : [null];      // au moins une liste affichée, réglée sur « Choisissez… »
+  const vide = type === "associes" ? "Choisissez un associé" : "Choisissez un collaborateur";
+  zone.innerHTML = ids.map((id, i) => {
+    const connu = id && liste.some(p => p.id === id);
+    const opts = `<option value="">${vide}</option>` + (id && !connu ? `<option value="${id}" selected>n° ${id} (inactif ou retiré de CARNET)</option>` : "") +
+      liste.map(p => `<option value="${p.id}"${p.id === id ? " selected" : ""}>${html(nomPersonne(p))}</option>`).join("");
+    return `<div class="rattache-ligne"><select data-type="${type}" data-i="${i}" onchange="choisirRattache(this)">${opts}</select>` +
+      (ids.length > 1 ? `<button type="button" class="retirer" title="Retirer" onclick="retirerRattache('${type}',${i})">✕</button>` : "") + `</div>`;
+  }).join("");
+}
+function lireRattaches(type){ return Array.from($("mc-" + type).querySelectorAll("select")).map(s => parseInt(s.value, 10)).filter(n => n > 0); }
+function choisirRattache(sel){ RATTACHES[sel.dataset.type] = Array.from($("mc-" + sel.dataset.type).querySelectorAll("select")).map(s => parseInt(s.value, 10) || null); }
+function ajouterRattache(type){ choisirRattache({ dataset: { type } }); if(!RATTACHES[type].length) RATTACHES[type] = [null]; RATTACHES[type].push(null); dessinerRattaches(type); }
+function retirerRattache(type, i){ choisirRattache({ dataset: { type } }); RATTACHES[type].splice(i, 1); dessinerRattaches(type); }
+
 async function enregistrerClient(){
   $("erreur-modifier-client").textContent = "";
+  const associes = lireRattaches("associes"), collaborateurs = lireRattaches("collaborateurs");
+  if(!associes.length){ $("erreur-modifier-client").textContent = "Rattachez au moins un associé au client : c'est lui qui sera alerté en cas de difficulté."; return; }
   try{
     await api("client_modifier", {
       id: clientCourant.client.id,
       nom: $("mc-nom").value, url_site: $("mc-url").value, code: $("mc-code").value,
-      seuil_heure_alerte: $("mc-seuil-alerte").value, seuil_heure_pause: $("mc-seuil-pause").value, seuil_jour: $("mc-seuil-jour").value
+      seuil_heure_alerte: $("mc-seuil-alerte").value, seuil_heure_pause: $("mc-seuil-pause").value, seuil_jour: $("mc-seuil-jour").value,
+      associes, collaborateurs
     });
     message("Enregistré.");
     ouvrirClient(clientCourant.client.id);
