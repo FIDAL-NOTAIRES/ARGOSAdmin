@@ -22,6 +22,8 @@
 //   ARGOS_LECTEUR_URL   chaîne Neon du rôle argos_lecteur (recopiée dans chaque site client)
 //   SCW_LECTURE_CLE / SCW_LECTURE_SECRET   clé Scaleway LECTURE SEULE (recopiée dans chaque site client)
 //   BREVO_CLE / BREVO_EXPEDITEUR / ADMIN_COURRIEL   facultatifs (courriels) ; sans Brevo, les liens sont affichés à l'écran
+// 05/11/2026 — CARNET (annuaire commun des associés et collaborateurs) :
+//   CARNET_URL  adresse de CARNET (https://carnet-ivory.vercel.app)   CARNET_CLE  clé de lecture donnée par CARNET à ARGOSAdmin
 // ============================================================
 
 const { neon } = require("@neondatabase/serverless");
@@ -322,8 +324,33 @@ async function ronde(sql, options = {}) {
   return { ok: echecs.length === 0, clients: rapport, echeances_rappelees: rappels, duree_ms: Date.now() - debut, manuel: !!options.manuel };
 }
 
+// ---------- CARNET : lecture des associés et collaborateurs actifs (serveur à serveur, clé propre à ARGOSAdmin) ----------
+let carnetCache = null, carnetCacheLe = 0;
+async function lireCarnet() {
+  if (carnetCache && Date.now() - carnetCacheLe < 60000) return carnetCache;
+  const url = String(process.env.CARNET_URL || "").replace(/\/+$/, ""), cle = process.env.CARNET_CLE || "";
+  if (!url || !cle) throw new Error("CARNET n'est pas branché : variables CARNET_URL et CARNET_CLE absentes sur ARGOSAdmin.");
+  const r = await fetch(url + "/api/carnet?action=lecture", { headers: { "X-Carnet-Cle": cle } });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error("CARNET répond : " + (d.erreur || r.status));
+  carnetCache = d.personnes || []; carnetCacheLe = Date.now();
+  return carnetCache;
+}
+function listeIds(v) {
+  const t = Array.isArray(v) ? v : [];
+  return [...new Set(t.map((x) => parseInt(x, 10)).filter((x) => Number.isFinite(x) && x > 0))];
+}
+
 // ---------- actions ----------
 const actions = {
+  // 05/11 : personnes de CARNET proposées dans la fiche client (actifs seulement)
+  async carnet_personnes() {
+    const liste = await lireCarnet();
+    const court = (p) => ({ id: p.id, civilite: p.civilite, prenom: p.prenom, nom: p.nom, courriel: p.courriel, fonction: p.fonction,
+      site: p.site ? p.site.nom : "", sans_signature: !!p.sans_signature });
+    return { associes: liste.filter((p) => p.categorie === "associe").map(court), collaborateurs: liste.filter((p) => p.categorie === "collaborateur").map(court) };
+  },
+
   async clients(sql) {
     const lignes = await sql`
       SELECT c.id, c.nom, c.actif, c.url_site, c.seuil_jour, c.seuil_vitesse, c.seuil_heure_alerte, c.seuil_heure_pause, c.cree_le,
@@ -423,9 +450,13 @@ const actions = {
     const seuil_heure_pause = Math.max(seuil_heure_alerte + 1, entier(p.seuil_heure_pause, 50));
     const seuil_jour = Math.max(seuil_heure_pause, entier(p.seuil_jour, 100));
     const code = texte(p.code, 40).toLowerCase().replace(/[^a-z0-9-]/g, "") || null;
+    // 05/11 : au moins un associé rattaché (il est alerté en cas de difficulté) ; collaborateurs facultatifs ; identifiants CARNET
+    const associes = listeIds(p.associes), collaborateurs = listeIds(p.collaborateurs);
+    if (!associes.length) throw new Error("Rattachez au moins un associé au client : c'est lui qui sera alerté en cas de difficulté.");
     await sql`
       UPDATE argos_client
-      SET nom = ${nom}, url_site = ${url_site}, code = ${code}, seuil_heure_alerte = ${seuil_heure_alerte}, seuil_heure_pause = ${seuil_heure_pause}, seuil_jour = ${seuil_jour}, maj_le = NOW()
+      SET nom = ${nom}, url_site = ${url_site}, code = ${code}, seuil_heure_alerte = ${seuil_heure_alerte}, seuil_heure_pause = ${seuil_heure_pause}, seuil_jour = ${seuil_jour},
+          associes = ${JSON.stringify(associes)}::jsonb, collaborateurs = ${JSON.stringify(collaborateurs)}::jsonb, maj_le = NOW()
       WHERE id = ${id}`;
     return { ok: true };
   },
