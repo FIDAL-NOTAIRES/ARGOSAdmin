@@ -1264,25 +1264,43 @@ function rattachesClient(){
 }
 function deNom(nom){ nom = String(nom || "").trim(); return (/^[aeiouyàâäéèêëîïôöùûü]/i.test(nom) ? "d'" : "de ") + nom; }
 function capitaliser(s){ s = String(s || "").trim(); return s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()) : s; }
+/* 05/11 soir : signature IDENTIQUE à celle de CARNET (même règles, même charte) — qualité « Notaire Associé » / « Notaire »,
+   deuxième ligne facultative à la place du service, couleur du nom choisie dans CARNET, téléphone et adresse du site, logos centrés */
+const COULEURS_SIG = ["#33838B", "#0F2238", "#657D96", "#E3CC7A", "#82AA98", "#FF982D", "#6DD5DC"];
+function qualiteSig(p){
+  if(p.categorie === "associe" || p.role === "associé") return "Notaire Associé";
+  if(p.fonction === "Notaire salarié") return "Notaire";
+  return p.fonction && p.fonction !== "Autre" ? p.fonction : "";
+}
+function telSig(v){
+  const s = String(v || "").trim(), d = s.replace(/\D/g, "");
+  if(/^\+33/.test(s.replace(/\s/g, "")) && d.length === 11) return "+33 " + d.charAt(2) + " " + d.slice(3).replace(/(\d{2})(?=\d)/g, "$1 ");
+  if(d.length === 10 && d.charAt(0) === "0") return d.replace(/(\d{2})(?=\d)/g, "$1 ");
+  return s;
+}
 function signatureHtml(p){
   if(!p || p.sans_signature) return "";
-  const adresse = p.site_adresse ? `${p.site_adresse} –&nbsp;${[p.site_cp, capitaliser(p.site)].filter(Boolean).join(" ")}` : "3 Place de la Madeleine –&nbsp;75008 Paris";
-  const tel = p.telephone || p.portable || "";
-  const ps = "font-family:'Segoe UI',sans-serif;color:#0F2238";
+  const seg = "font-family:'Segoe UI',sans-serif;color:#0F2238";
+  const couleur = COULEURS_SIG.includes(p.couleur) ? p.couleur : COULEURS_SIG[0];
+  const q = qualiteSig(p), tel = telSig(p.telephone || p.site_tel);
+  const adresse = p.site_adresse ? `${html(p.site_adresse)} –&nbsp;${html([p.site_cp, capitaliser(p.site)].filter(Boolean).join(" "))}` : "";
+  const lig = (contenu, taille) => `<p style="margin:0 0 0 15px;font-size:${taille};line-height:115%;${seg}">${contenu}</p>`;
   return `<table border="0" cellspacing="0" cellpadding="0" width="715" style="width:715px;border-collapse:collapse"><tr>` +
-    `<td width="176" valign="middle" align="center" style="width:176px;border-right:1px solid #000;padding:0 7px;vertical-align:middle;text-align:center">` +
-    `<p style="margin:0;text-align:center"><img src="https://connexion-omega.vercel.app/signature/logo-fidal-notaires.png" width="145" height="72" alt="FIDAL Notaires" style="display:inline-block;width:145px;height:72px;border:0"></p></td>` +
-    `<td width="325" valign="top" style="width:325px;border-right:1px solid #000;padding:0 7px"><p style="margin:0;font-size:8pt;${ps}">&nbsp;</p>` +
-    `<p style="margin:0 0 4px 15px;font-size:16pt;font-family:Georgia,serif;color:#33838B">${html([p.prenom, p.nom].filter(Boolean).join(" "))}</p>` +
-    (p.fonction ? `<p style="margin:0 0 0 15px;font-size:10pt;line-height:115%;${ps}">${html(p.fonction)}</p>` : "") +
-    (p.service ? `<p style="margin:0 0 0 15px;font-size:10pt;line-height:115%;${ps}">${html(p.service)}</p>` : "") +
-    `<p style="margin:0 0 0 15px;font-size:9pt;line-height:115%;${ps}">&nbsp;</p>` +
-    (tel ? `<p style="margin:0 0 0 15px;font-size:9pt;${ps}">${html(tel)}</p>` : "") +
-    (p.courriel ? `<p style="margin:0 0 0 15px;font-size:9pt;font-family:'Segoe UI',sans-serif"><a href="mailto:${html(p.courriel)}" style="color:#0563C1;text-decoration:underline">${html(p.courriel)}</a></p>` : "") +
-    `<p style="margin:0 0 0 15px;font-size:9pt;${ps}">${adresse}</p><p style="margin:0;font-size:8pt;${ps}">&nbsp;</p></td>` +
-    `<td width="213" valign="middle" align="center" style="width:213px;padding:0 7px;vertical-align:middle;text-align:center">` +
-    `<p style="margin:0;text-align:center"><img src="https://connexion-omega.vercel.app/signature/logo-notaires-de-france.png" width="78" height="74" alt="Notaires de France" style="display:inline-block;width:78px;height:74px;border:0"></p></td></tr></table>` +
-    `<p style="margin:0;font-size:7pt;${ps}">&nbsp;</p><p style="margin:0;text-align:justify;font-size:8pt;font-family:'Segoe UI',sans-serif;color:#000"><b>Confidentiel&nbsp;: </b>Cet e-mail et ses pièces jointes contiennent des informations confidentielles protégées par le secret professionnel. S'il ne vous est pas destiné, nous vous remercions de le détruire immédiatement, sans le copier ni révéler ou transmettre son contenu à quiconque.</p>`;
+    `<td width="176" valign="middle" style="width:176px;border-right:1px solid #0F2238;padding:0 7px;vertical-align:middle">` +
+    `<p style="margin:0"><img src="https://connexion-omega.vercel.app/signature/logo-fidal-notaires.png" width="145" height="72" alt="FIDAL Notaires" style="display:block;width:145px;height:72px;border:0"></p></td>` +
+    `<td width="325" valign="middle" style="width:325px;border-right:1px solid #0F2238;padding:0 7px;vertical-align:middle"><p style="margin:0;font-size:8pt;${seg}">&nbsp;</p>` +
+    `<p style="margin:0 0 4px 15px;font-size:16pt;font-family:Georgia,serif;color:${couleur}">${html([p.prenom, p.nom].filter(Boolean).join(" "))}</p>` +
+    (q ? lig(html(q), "10pt") : "") +
+    (p.ligne2 ? lig(html(p.ligne2), "10pt") : "") +
+    lig("&nbsp;", "9pt") +
+    (tel ? lig(html(tel), "9pt") : "") +
+    (p.courriel ? `<p style="margin:0 0 0 15px;font-size:9pt;font-family:'Segoe UI',sans-serif"><a href="mailto:${html(p.courriel)}" style="color:#33838B;text-decoration:underline">${html(p.courriel)}</a></p>` : "") +
+    (adresse ? lig(adresse, "9pt") : "") +
+    `<p style="margin:0;font-size:8pt;${seg}">&nbsp;</p></td>` +
+    `<td width="213" valign="middle" style="width:213px;padding:0 7px;vertical-align:middle">` +
+    `<p style="margin:0"><img src="https://connexion-omega.vercel.app/signature/logo-notaires-de-france.png" width="78" height="74" alt="Notaires de France" style="display:block;width:78px;height:74px;border:0"></p></td></tr></table>` +
+    `<p style="margin:0;font-size:7pt;${seg}">&nbsp;</p><p style="margin:0;font-size:7pt;${seg}">&nbsp;</p>` +
+    `<p style="margin:0;text-align:justify;font-size:8pt;font-family:'Segoe UI',sans-serif;color:#1A1A1A"><b>Confidentiel&nbsp;: </b>Cet e-mail et ses pièces jointes contiennent des informations confidentielles protégées par le secret professionnel. S'il ne vous est pas destiné, nous vous remercions de le détruire immédiatement, sans le copier ni révéler ou transmettre son contenu à quiconque.</p>`;
 }
 function texteInvitation(u, lien){
   const appel = u && u.civilite === "Madame" ? "Chère Madame," : u && u.civilite === "Monsieur" ? "Cher Monsieur," : "Madame, Monsieur,";
