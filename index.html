@@ -252,6 +252,16 @@
   .evenements li{font-size:13.5px;margin:3px 0;white-space:pre-line}
   .lien-copie{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#F6FBFB;border:1px dashed var(--canard);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px}
   .lien-copie code{flex:1;min-width:200px}
+  .imp-table{width:100%;font-size:13px;margin-top:10px}
+  .imp-table td,.imp-table th{padding:6px 8px;vertical-align:top}
+  .imp-table tr.vert td:first-child{border-left:4px solid #2E7D32}
+  .imp-table tr.orange td:first-child{border-left:4px solid #E08A00}
+  .imp-table tr.rouge td:first-child{border-left:4px solid #A01040}
+  .imp-table tr.attente td:first-child{border-left:4px solid #B8C2CC}
+  .imp-table .motif{font-size:12px;color:#5A6B7B}
+  .imp-table tr.rouge .motif{color:#A01040}
+  .imp-table tr.orange .motif{color:#A05A00}
+  .imp-legende{font-size:12px;display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;color:var(--texte)}
   .filtres-clients{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:4px 0 12px;font-size:14px}
   .filtres-clients label{display:inline-flex;gap:6px;align-items:center;margin:0;color:var(--texte)}
   .filtres-clients select{width:auto;min-width:190px;padding:5px 8px}
@@ -485,7 +495,22 @@
         <h3>Sites</h3>
         <span class="petit" id="fc-nb-sites"></span>
         <div class="droite">
+          <button class="btn second" type="button" onclick="ouvrirImport()">Importer des sites (Excel)</button>
           <button class="btn" type="button" onclick="basculer('form-nouveau-site')">Ajouter un site</button>
+        </div>
+      </div>
+      <div class="formulaire-inline" id="form-import-sites">
+        <p class="info" style="margin:0 0 8px">Remplissez le modèle (une ligne par site : nom, adresse, code postal, commune, nature, références cadastrales), puis déposez-le. Rien n'est créé avant votre validation de l'aperçu.</p>
+        <div class="actions" style="margin-top:0">
+          <button class="btn second" type="button" onclick="modeleImport()">⬇ Télécharger le modèle Excel</button>
+          <label class="btn second" style="margin:0;cursor:pointer">Déposer le fichier rempli<input type="file" id="imp-fichier" accept=".xlsx,.xls,.csv" style="display:none" onchange="lireImport(this.files[0]);this.value=''"></label>
+          <span class="petit" id="imp-etat"></span>
+        </div>
+        <div id="imp-apercu"></div>
+        <div class="erreur" id="erreur-import"></div>
+        <div class="actions" id="imp-actions" style="display:none">
+          <button class="btn" type="button" id="imp-creer" onclick="creerImport()">Créer les sites retenus</button>
+          <button class="btn second" type="button" onclick="fermerImport()">Annuler</button>
         </div>
       </div>
       <div class="formulaire-inline" id="form-nouveau-site">
@@ -1449,6 +1474,91 @@ async function chargerJournal(){
     }
   }catch(e){ message(e.message); }
 }
+/* 05/11 : IMPORT EN MASSE DES SITES — modèle à 6 colonnes, aperçu vert / orange / rouge, « passer outre », création des lignes retenues */
+const COLONNES_IMPORT = ["Nom du site", "Adresse", "Code postal", "Commune", "Nature du bien", "Références cadastrales"];
+let IMPORT = [];
+function ouvrirImport(){ basculer("form-import-sites", true); }
+function fermerImport(){ IMPORT = []; $("imp-apercu").innerHTML = ""; $("imp-actions").style.display = "none"; $("imp-etat").textContent = ""; $("erreur-import").textContent = ""; basculer("form-import-sites", false); }
+async function modeleImport(){
+  try{
+    await chargerXlsx();
+    const ws = XLSX.utils.aoa_to_sheet([COLONNES_IMPORT, ["Exemple — ligne à supprimer : Entrepôt nord", "12 rue de la Gare", "59000", "Lille", "Entrepôt / plateforme logistique", "Section AB n° 12, 13 et 14"]]);
+    ws["!cols"] = [{ wch: 34 }, { wch: 32 }, { wch: 12 }, { wch: 20 }, { wch: 32 }, { wch: 40 }];
+    const wn = XLSX.utils.aoa_to_sheet([["Natures du bien admises (recopiez l'intitulé exact)"]].concat(NATURES_BIEN.map(n => [n]))); wn["!cols"] = [{ wch: 50 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Sites"); XLSX.utils.book_append_sheet(wb, wn, "Natures");
+    XLSX.writeFile(wb, "Modèle d'import des sites - " + clientCourant.client.nom.replace(/[\\/:*?"<>|]/g, "-") + ".xlsx");
+  }catch(e){ message(e.message); }
+}
+function natureCanonique(v){
+  const n = sansAccents(v).replace(/[^a-z0-9]+/g, " ").trim(); if(!n) return { valeur: "", connue: true };
+  const t = NATURES_BIEN.find(x => sansAccents(x).replace(/[^a-z0-9]+/g, " ").trim() === n);
+  return t ? { valeur: t, connue: true } : { valeur: String(v).trim(), connue: false };
+}
+async function lireImport(fichier){
+  if(!fichier) return;
+  $("erreur-import").textContent = ""; $("imp-apercu").innerHTML = ""; $("imp-actions").style.display = "none";
+  try{
+    await chargerXlsx();
+    const wb = XLSX.read(await fichier.arrayBuffer(), { type: "array" });
+    const lignes = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" });
+    const iTete = lignes.findIndex(l => sansAccents(l[0]).includes("nom"));
+    if(iTete < 0) throw new Error("En-tête introuvable : utilisez le modèle (première colonne « Nom du site »).");
+    IMPORT = lignes.slice(iTete + 1)
+      .map(l => l.map(c => String(c == null ? "" : c).trim()))
+      .filter(l => l.slice(0, 6).some(Boolean) && !/^exemple/i.test(l[0]))
+      .map(l => { const nat = natureCanonique(l[4]);
+        return { nom: l[0], adresse: l[1], code_postal: l[2].replace(/\s/g, "").padStart(l[2] && /^\d{4}$/.test(l[2].replace(/\s/g, "")) ? 5 : 0, "0"), commune: l[3], nature: nat.valeur, nature_connue: nat.connue, cadastre: l[5],
+                 etat: "attente", motifs: [], forcable: false, force: false, retenu: false }; });
+    if(!IMPORT.length) throw new Error("Aucune ligne de site dans le fichier.");
+    if(IMPORT.length > 500) throw new Error("500 lignes au plus par import.");
+    dessinerImport();
+    for(let i = 0; i < IMPORT.length; i += 5){
+      $("imp-etat").textContent = `Contrôle en cours : ${Math.min(i + 5, IMPORT.length)} / ${IMPORT.length} lignes (cadastre interrogé pour chaque parcelle)…`;
+      const lot = IMPORT.slice(i, i + 5);
+      try{
+        const r = await api("import_verifier", { client_id: clientCourant.client.id, lignes: lot });
+        r.resultats.forEach((x, k) => { const l = lot[k]; Object.assign(l, { etat: x.etat, motifs: x.motifs, forcable: x.forcable });
+          if(!l.nature_connue){ l.motifs.push("Nature hors liste : « " + l.nature + " » (reprise telle quelle)"); if(l.etat === "vert") l.etat = "orange"; }
+          l.retenu = l.etat === "vert" || (l.etat === "orange" && !l.motifs.some(m => m.startsWith("Doublon"))); });
+      }catch(e){ lot.forEach(l => { l.etat = "rouge"; l.forcable = true; l.motifs = ["Contrôle impossible : " + e.message]; }); }
+      dessinerImport();
+    }
+    const n = c => IMPORT.filter(l => l.etat === c).length;
+    $("imp-etat").textContent = `Contrôle terminé : ${n("vert")} prête${n("vert") > 1 ? "s" : ""}, ${n("orange")} à vérifier, ${n("rouge")} en erreur.`;
+  }catch(e){ $("erreur-import").textContent = e.message; }
+}
+function dessinerImport(){
+  const lignes = IMPORT.map((l, i) => `<tr class="${l.etat}">
+      <td><input type="checkbox" ${l.retenu ? "checked" : ""} ${(l.etat === "rouge" && !l.force) || l.etat === "attente" ? "disabled" : ""} onchange="IMPORT[${i}].retenu=this.checked;compterImport()"></td>
+      <td><strong>${html(l.nom || "—")}</strong><div class="motif">${l.etat === "attente" ? "En attente du contrôle…" : l.motifs.length ? l.motifs.map(html).join("<br>") : "Prête"}</div>
+        ${l.etat === "rouge" && l.forcable && !l.force ? `<button class="mini" type="button" onclick="forcerImport(${i})">Passer outre</button>` : ""}${l.force ? `<div class="motif">Contrôle passé outre</div>` : ""}</td>
+      <td>${html([l.adresse, [l.code_postal, l.commune].filter(Boolean).join(" ")].filter(Boolean).join(", "))}</td>
+      <td>${html(l.nature || "—")}</td><td>${html(l.cadastre || "—")}</td></tr>`).join("");
+  $("imp-apercu").innerHTML = `<div style="overflow-x:auto"><table class="imp-table"><thead><tr><th style="width:28px"></th><th>Site</th><th>Adresse</th><th>Nature</th><th>Références cadastrales</th></tr></thead><tbody>${lignes}</tbody></table></div>` +
+    `<div class="imp-legende"><span>▌<span style="color:#2E7D32">vert</span> prête</span><span>▌<span style="color:#E08A00">orange</span> à vérifier (doublon possible : décochée par défaut)</span><span>▌<span style="color:#A01040">rouge</span> erreur — « Passer outre » pour un contrôle cadastral non concluant</span></div>`;
+  $("imp-actions").style.display = IMPORT.length ? "" : "none"; compterImport();
+}
+function forcerImport(i){
+  const l = IMPORT[i];
+  if(!confirm(`Créer « ${l.nom} » malgré le contrôle cadastral ?\n\n${l.motifs.join("\n")}`)) return;
+  l.force = true; l.retenu = true; dessinerImport();
+}
+function compterImport(){ const n = IMPORT.filter(l => l.retenu).length; $("imp-creer").textContent = n ? `Créer ${n} site${n > 1 ? "s" : ""}` : "Aucune ligne retenue"; $("imp-creer").disabled = !n; }
+async function creerImport(){
+  const retenues = IMPORT.filter(l => l.retenu); if(!retenues.length) return;
+  if(!confirm(`Créer ${retenues.length} site${retenues.length > 1 ? "s" : ""} pour ${clientCourant.client.nom} ?`)) return;
+  $("imp-creer").disabled = true; let faits = 0, nonGeo = 0;
+  try{
+    for(let i = 0; i < retenues.length; i += 10){
+      $("imp-etat").textContent = `Création en cours : ${faits} / ${retenues.length}…`;
+      const r = await api("import_creer", { client_id: clientCourant.client.id, lignes: retenues.slice(i, i + 10) });
+      faits += r.crees.length; nonGeo += r.crees.filter(c => !c.geolocalise).length;
+    }
+    message(`${faits} site${faits > 1 ? "s" : ""} créé${faits > 1 ? "s" : ""}` + (nonGeo ? ` (${nonGeo} sans position sur la carte : adresse à vérifier)` : "") + ".");
+    fermerImport(); ouvrirClient(clientCourant.client.id);
+  }catch(e){ $("erreur-import").textContent = `Arrêt après ${faits} site(s) créé(s) : ${e.message}`; $("imp-creer").disabled = false; }
+}
+
 /* 05/11 : export Excel des pièces consultées (filtres personne / du / au de la fiche) */
 function chargerXlsx(){
   if(window.XLSX) return Promise.resolve();
