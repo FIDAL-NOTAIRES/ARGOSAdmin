@@ -362,7 +362,9 @@ const actions = {
              (SELECT COUNT(*)::int FROM argos_utilisateur u WHERE u.client_id = c.id) AS nb_utilisateurs,
              (SELECT MAX(p.depose_le) FROM argos_piece p JOIN argos_site s ON s.id = p.site_id WHERE s.client_id = c.id) AS dernier_depot,
              c.code, c.vercel_projet, so.dernier_ok, so.dernier_echec, so.message AS sondage_message, so.version,
-             (SELECT COUNT(*)::int FROM argos_evenement e WHERE e.client_id = c.id AND e.traite = FALSE) AS nb_evenements
+             (SELECT COUNT(*)::int FROM argos_evenement e WHERE e.client_id = c.id AND e.traite = FALSE) AS nb_evenements,
+             (SELECT COUNT(*)::int FROM argos_site s WHERE s.client_id = c.id AND s.cadastre_alerte_le IS NOT NULL) AS nb_sites_alerte,
+             c.associes, c.collaborateurs
       FROM argos_client c
       LEFT JOIN argos_sondage so ON so.client_id = c.id
       ORDER BY c.nom`;
