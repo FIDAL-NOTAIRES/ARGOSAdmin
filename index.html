@@ -252,6 +252,9 @@
   .evenements li{font-size:13.5px;margin:3px 0;white-space:pre-line}
   .lien-copie{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#F6FBFB;border:1px dashed var(--canard);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px}
   .lien-copie code{flex:1;min-width:200px}
+  .filtres-clients{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:4px 0 12px;font-size:14px}
+  .filtres-clients label{display:inline-flex;gap:6px;align-items:center;margin:0;color:var(--texte)}
+  .filtres-clients select{width:auto;min-width:190px;padding:5px 8px}
   #corps-utilisateurs td:nth-child(3){min-width:200px}
   .ligne.trois.civ{grid-template-columns:130px 1fr 1fr 1.4fr}
   .invitation{border:1px solid var(--trait);border-radius:8px;margin-top:12px;background:#fff}
@@ -337,6 +340,14 @@
           <button class="btn" type="button" onclick="creerClient()">Créer le client</button>
           <button class="btn second" type="button" onclick="basculer('form-nouveau-client',false)">Annuler</button>
         </div>
+      </div>
+      <div class="filtres-clients" id="filtres-clients">
+        <label><input type="checkbox" id="flt-alerte" onchange="filtrerClients()"> En alerte</label>
+        <label><input type="checkbox" id="flt-suspendus" onchange="filtrerClients()"> Suspendus</label>
+        <select id="flt-associe" onchange="filtrerClients()"><option value="">Associé : tous</option></select>
+        <select id="flt-collab" onchange="filtrerClients()"><option value="">Collaborateur : tous</option></select>
+        <span class="petit" id="flt-compte"></span>
+        <a href="#" id="flt-effacer" onclick="effacerFiltres();return false" style="display:none">Effacer les filtres</a>
       </div>
       <table id="table-clients">
         <thead>
@@ -894,10 +905,36 @@ async function supprimerEcheance(id){
   try{ await api("echeance_supprimer", { id }); chargerEcheances(); const r = await api("clients"); afficherBandeEcheances(r.echeances || []); }catch(e){ message(e.message); }
 }
 function compareVersion(a, b){ const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number); for(let i=0;i<3;i++){ if((x[i]||0)!==(y[i]||0)) return (x[i]||0)-(y[i]||0); } return 0; }
-function afficherClients(liste){
-  const versionMax = liste.map(c => c.version).filter(Boolean).sort(compareVersion).pop() || "";
+/* 05/11 : filtres de la liste des clients (en alerte, suspendus, associé, collaborateur) — aucun actif par défaut */
+let CLIENTS_TOUS = [];
+function enAlerte(c){ return voyantClasse(c) === "rouge" || c.nb_evenements > 0 || c.nb_sites_alerte > 0; }
+async function afficherClients(liste){
+  CLIENTS_TOUS = liste || [];
+  filtrerClients();
+  await chargerCarnet();
+  const remplir = (sel, type, vide) => {
+    const val = sel.value, ids = new Set(); CLIENTS_TOUS.forEach(c => (c[type] || []).forEach(i => ids.add(i)));
+    const gens = ((CARNET_P && CARNET_P[type]) || []).filter(p => ids.has(p.id)).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom, "fr"));
+    sel.innerHTML = `<option value="">${vide}</option>` + gens.map(p => `<option value="${p.id}">${html([p.prenom, p.nom].join(" "))}</option>`).join("");
+    sel.value = gens.some(p => String(p.id) === val) ? val : "";
+  };
+  remplir($("flt-associe"), "associes", "Associé : tous"); remplir($("flt-collab"), "collaborateurs", "Collaborateur : tous");
+}
+function filtrerClients(){
+  const a = $("flt-alerte").checked, s = $("flt-suspendus").checked, as = parseInt($("flt-associe").value, 10), co = parseInt($("flt-collab").value, 10);
+  const liste = CLIENTS_TOUS.filter(c => (!a || enAlerte(c)) && (!s || !c.actif) && (!as || (c.associes || []).includes(as)) && (!co || (c.collaborateurs || []).includes(co)));
+  const actif = a || s || as || co;
+  $("flt-compte").textContent = actif ? `${liste.length} client${liste.length > 1 ? "s" : ""} sur ${CLIENTS_TOUS.length}` : "";
+  $("flt-effacer").style.display = actif ? "" : "none";
+  $("filtres-clients").style.display = CLIENTS_TOUS.length ? "" : "none";
+  dessinerClients(liste, actif);
+}
+function effacerFiltres(){ $("flt-alerte").checked = false; $("flt-suspendus").checked = false; $("flt-associe").value = ""; $("flt-collab").value = ""; filtrerClients(); }
+function dessinerClients(liste, filtre){
+  const versionMax = CLIENTS_TOUS.map(c => c.version).filter(Boolean).sort(compareVersion).pop() || "";
   const corps = $("corps-clients"); corps.innerHTML = "";
   $("vide-clients").style.display = liste.length ? "none" : "block";
+  $("vide-clients").textContent = filtre ? "Aucun client ne répond à ces filtres." : "Aucun client pour l'instant. Créez le premier avec le bouton ci-dessus.";
   $("table-clients").style.display = liste.length ? "table" : "none";
   for(const c of liste){
     const tr = document.createElement("tr");
