@@ -412,7 +412,8 @@ const actions = {
   async client(sql, p) {
     const id = entier(p.id, 0);
     const c = await sql`
-      SELECT c.*, so.dernier_ok, so.dernier_echec, so.message AS sondage_message
+      SELECT c.*, so.dernier_ok, so.dernier_echec, so.message AS sondage_message,
+             (SELECT x.motif FROM argos_suspension x WHERE x.client_id = c.id AND x.utilisateur_id IS NULL AND x.action = 'suspension' ORDER BY x.cree_le DESC LIMIT 1) AS suspension_motif
       FROM argos_client c LEFT JOIN argos_sondage so ON so.client_id = c.id
       WHERE c.id = ${id}`;
     if (!c.length) throw new Error("Client introuvable.");
@@ -424,7 +425,8 @@ const actions = {
       ORDER BY s.commune, s.nom, s.id`;
     const utilisateurs = await sql`
       SELECT u.id, u.courriel, u.civilite, u.nom, u.prenom, u.role, u.active, u.bloque_jusqua, u.cree_le, u.active_le, u.conditions_le, u.suspendu_le,
-             u.coupe_par_responsable, u.pause_volume, u.derniere_connexion, u.activation_expire, u.activation_objet,
+             u.coupe_par_responsable, u.pause_volume,
+             (SELECT x.motif FROM argos_suspension x WHERE x.utilisateur_id = u.id AND x.action = 'suspension' ORDER BY x.cree_le DESC LIMIT 1) AS suspension_motif, u.derniere_connexion, u.activation_expire, u.activation_objet,
              (SELECT COALESCE(json_agg(json_build_object('id', a.id, 'libelle', a.libelle, 'type', a.type, 'vu_le', a.vu_le) ORDER BY a.vu_le DESC), '[]'::json) FROM argos_appareil a WHERE a.utilisateur_id = u.id) AS appareils,
              (SELECT COALESCE(json_agg(e.site_id), '[]'::json) FROM argos_site_exclu e WHERE e.utilisateur_id = u.id) AS sites_exclus
       FROM argos_utilisateur u WHERE u.client_id = ${id} ORDER BY u.nom, u.prenom`;
@@ -468,6 +470,10 @@ const actions = {
   async client_suspendre(sql, p) {
     const id = entier(p.id, 0);
     const actif = !!p.actif;
+    // 05/11 : motif OBLIGATOIRE à la suspension, conservé dans argos_suspension (table non lue par les sites clients)
+    const motif = texte(p.motif, 500);
+    if (!actif && !motif) throw new Error("Le motif de la suspension est obligatoire.");
+    await sql`INSERT INTO argos_suspension (client_id, action, motif) VALUES (${id}, ${actif ? "retablissement" : "suspension"}, ${actif ? null : motif})`;
     await sql`
       UPDATE argos_client
       SET actif = ${actif}, suspendu_le = ${actif ? null : new Date()}, maj_le = NOW()
@@ -743,6 +749,10 @@ const actions = {
   async utilisateur_suspendre(sql, p) {
     const id = entier(p.id, 0);
     const suspendre = !!p.suspendre;
+    const motif = texte(p.motif, 500);
+    if (suspendre && !motif) throw new Error("Le motif de la suspension est obligatoire.");
+    const cl = await sql`SELECT client_id FROM argos_utilisateur WHERE id = ${id}`;
+    if (cl.length) await sql`INSERT INTO argos_suspension (client_id, utilisateur_id, action, motif) VALUES (${cl[0].client_id}, ${id}, ${suspendre ? "suspension" : "retablissement"}, ${suspendre ? motif : null})`;
     if (suspendre) {
       await sql`UPDATE argos_utilisateur SET suspendu_le = NOW(), maj_le = NOW() WHERE id = ${id}`;
       await sql`UPDATE argos_session SET revoque_le = NOW() WHERE utilisateur_id = ${id} AND revoque_le IS NULL`;
