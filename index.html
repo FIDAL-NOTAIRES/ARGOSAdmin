@@ -252,10 +252,19 @@
   .evenements li{font-size:13.5px;margin:3px 0;white-space:pre-line}
   .lien-copie{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#F6FBFB;border:1px dashed var(--canard);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px}
   .lien-copie code{flex:1;min-width:200px}
+  .ligne.trois.civ{grid-template-columns:130px 1fr 1fr 1.4fr}
+  .invitation{border:1px solid var(--trait);border-radius:8px;margin-top:12px;background:#fff}
+  .invitation .tete{padding:10px 14px;border-bottom:1px solid var(--trait);display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;font-size:13px}
+  .invitation .tete strong{color:var(--texte)}
+  .invitation .exp label{display:inline-flex;gap:5px;align-items:center;margin:0 12px 0 0;font-size:13px;color:var(--texte)}
+  .invitation .apercu{padding:14px;overflow-x:auto;font-family:'Segoe UI',sans-serif;font-size:10pt;color:#0F2238}
+  .invitation .apercu p{margin:0 0 10px}
+  .invitation .alerte{color:#A01040;font-size:13px;padding:8px 14px 0}
+  .invitation .actions{padding:0 14px 12px}
   .version{font-size:11px;color:var(--gris)}
   .version.retard{color:var(--orange);font-weight:600}
   @media (max-width:760px){
-    .cases,.ligne.trois{grid-template-columns:1fr}
+    .cases,.ligne.trois,.ligne.trois.civ{grid-template-columns:1fr}
     header{padding:0 14px}
     main{padding:18px 12px 40px}
     .ligne.deux,.ligne.quatre,.ligne.cadastre-contenance,.ligne.ligne-titre,.acte-colle{grid-template-columns:1fr}
@@ -497,9 +506,10 @@
       </div>
       <div class="formulaire-inline" id="form-utilisateur">
         <input type="hidden" id="fu-id">
-        <div class="ligne trois">
+        <div class="ligne trois civ">
+          <div><label for="fu-civilite">Civilité</label><select id="fu-civilite"><option value="">—</option><option>Monsieur</option><option>Madame</option></select></div>
           <div><label for="fu-nom">Nom</label><input type="text" id="fu-nom"></div>
-          <div><label for="fu-prenom">Prénom</label><input type="text" id="fu-prenom"></div>
+          <div><label for="fu-prenom">Prénom</label><input type="text" id="fu-prenom" oninput="presaisirCivilite()"></div>
           <div><label for="fu-courriel">Courriel</label><input type="text" id="fu-courriel" placeholder="prenom.nom@societe.fr"></div>
         </div>
         <label style="display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--texte)"><input type="checkbox" id="fu-responsable"> Responsable (point de contact : voit le journal de son équipe, reçoit les alertes, peut couper un accès)</label>
@@ -1139,6 +1149,7 @@ function ouvrirFormUtilisateur(id){
   const u = id ? clientCourant.utilisateurs.find(x => x.id === id) : null;
   $("fu-id").value = u ? u.id : "";
   $("fu-nom").value = u ? u.nom : ""; $("fu-prenom").value = u ? u.prenom : ""; $("fu-courriel").value = u ? u.courriel : "";
+  $("fu-civilite").value = u ? (u.civilite || "") : ""; civiliteTouchee = !!(u && u.civilite);
   $("fu-courriel").disabled = !!u;
   $("fu-responsable").checked = u ? u.role === "responsable" : false;
   const exclus = u ? (u.sites_exclus || []) : [];
@@ -1148,14 +1159,115 @@ function ouvrirFormUtilisateur(id){
   basculer("form-utilisateur", true);
 }
 function sitesExclusChoisis(){ return Array.from(document.querySelectorAll(".fu-site")).filter(c => !c.checked).map(c => Number(c.value)); }
-function montrerLien(r){
+function montrerLien(r, u){
   $("fu-lien").innerHTML = `<div class="lien-copie"><span>${r.envoye ? "Lien envoyé par courriel. Copie :" : "Courriel non configuré : remettez ce lien à la personne (valable quarante-huit heures, un seul usage) :"}</span>` +
-    `<code>${html(r.lien)}</code><button class="btn second" type="button" onclick="navigator.clipboard.writeText('${html(r.lien)}').then(()=>message('Lien copié.'))">Copier</button></div>`;
+    `<code>${html(r.lien)}</code><button class="btn second" type="button" onclick="navigator.clipboard.writeText('${html(r.lien)}').then(()=>message('Lien copié.'))">Copier le lien seul</button></div>` +
+    (r.objet && r.objet !== "activation" ? "" : `<div class="invitation" id="fu-invitation"></div>`);
+  if(!r.objet || r.objet === "activation"){ INVIT = { lien: r.lien, u: u || null, exp: null }; dessinerInvitation(); }
+}
+
+/* ---------- 05/11 : civilité présaisie selon le prénom (modifiable ; vide si inconnu ou mixte) ---------- */
+let civiliteTouchee = false;
+const PRENOMS_F = "anne,marie,catherine,christine,isabelle,sophie,nathalie,valerie,sylvie,caroline,stephanie,celine,sandrine,laurence,emilie,julie,aurelie,claire,helene,florence,agnes,beatrice,brigitte,cecile,chantal,corinne,delphine,elodie,elisabeth,emma,eva,francoise,genevieve,ines,jeanne,juliette,laure,lea,louise,lucie,manon,margaux,marine,martine,mathilde,monique,nadia,nicole,pascale,patricia,pauline,sabine,sarah,severine,solene,sonia,virginie,veronique,amelie,alice,charlotte,chloe,cloe,clemence,elise,estelle,fanny,gaelle,jessica,laetitia,lola,marion,melanie,muriel,nadine,ophelie,oceane,odile,anais,audrey,berengere,blandine,bernadette,christelle,coralie,diane,edith,eleonore,emmanuelle,gabrielle,ghislaine,josephine,karine,lina,lise,lydie,maud,mireille,myriam,noemie,perrine,raphaelle,rose,suzanne,tiphaine,victoire,yasmine,zoe,aude,alexandra,adeline,albane,apolline,armelle,axelle".split(",");
+const PRENOMS_M = "jean,pierre,michel,philippe,alain,patrick,nicolas,christophe,francois,laurent,eric,stephane,olivier,frederic,thierry,david,julien,sebastien,vincent,thomas,alexandre,antoine,arnaud,benoit,bernard,bruno,charles,christian,didier,emmanuel,etienne,fabrice,franck,gilles,guillaume,henri,herve,hugo,jacques,jerome,jose,joseph,louis,lucas,marc,mathieu,matthieu,maxime,olivier,pascal,paul,remi,richard,robert,romain,serge,simon,thibault,thibaut,xavier,yves,adrien,arthur,aurelien,baptiste,bertrand,cedric,damien,denis,edouard,florian,gael,gerard,gregoire,gregory,hubert,jeremy,jonathan,kevin,loic,ludovic,marcel,martin,mickael,noel,pierre-yves,quentin,raphael,regis,renaud,roger,sylvain,theo,tristan,victor,william,yann,jean-francois,jean-pierre,jean-marc,jean-luc,jean-michel,jean-philippe,francis,gaston,hector,jules,leon,louis-marie,marius,mehdi,mohamed,nathan,octave,valentin".split(",");
+function sansAccents(s){ return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim(); }
+function civiliteSelonPrenom(prenom){
+  const p = sansAccents(prenom); if(!p) return "";
+  if(PRENOMS_F.includes(p)) return "Madame";
+  if(PRENOMS_M.includes(p)) return "Monsieur";
+  const premier = p.split(/[\s-]/)[0];                       // « Marie-Hélène » → marie, « Jean-Baptiste » → jean
+  if(premier !== p){ if(PRENOMS_F.includes(premier)) return "Madame"; if(PRENOMS_M.includes(premier)) return "Monsieur"; }
+  return "";                                                   // inconnu ou mixte (Claude, Dominique, Camille…) : vous choisissez
+}
+function presaisirCivilite(){ if(!civiliteTouchee) $("fu-civilite").value = civiliteSelonPrenom($("fu-prenom").value); }
+document.addEventListener("change", e => { if(e.target && e.target.id === "fu-civilite"){ civiliteTouchee = true; dessinerInvitation(); } });
+
+/* ---------- 05/11 : message d'invitation prêt à copier (texte validé le 04/11) ---------- */
+let INVIT = null;
+function rattachesClient(){
+  const c = clientCourant.client, out = [];
+  for(const id of (c.associes || [])){ const p = trouverPersonne("associes", id); if(p) out.push(Object.assign({ role: "associé" }, p)); }
+  for(const id of (c.collaborateurs || [])){ const p = trouverPersonne("collaborateurs", id); if(p) out.push(Object.assign({ role: "collaborateur" }, p)); }
+  return out;
+}
+function deNom(nom){ nom = String(nom || "").trim(); return (/^[aeiouyàâäéèêëîïôöùûü]/i.test(nom) ? "d'" : "de ") + nom; }
+function capitaliser(s){ s = String(s || "").trim(); return s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()) : s; }
+function signatureHtml(p){
+  if(!p || p.sans_signature) return "";
+  const adresse = p.site_adresse ? `${p.site_adresse} –&nbsp;${[p.site_cp, capitaliser(p.site)].filter(Boolean).join(" ")}` : "3 Place de la Madeleine –&nbsp;75008 Paris";
+  const tel = p.telephone || p.portable || "";
+  const ps = "font-family:'Segoe UI',sans-serif;color:#0F2238";
+  return `<table border="0" cellspacing="0" cellpadding="0" width="715" style="width:715px;border-collapse:collapse"><tr>` +
+    `<td width="176" valign="top" style="width:176px;border-right:1px solid #000;padding:0 7px"><p style="margin:0;font-size:9pt;${ps}">&nbsp;</p><p style="margin:0;font-size:9pt;${ps}">&nbsp;</p><p style="margin:0;font-size:9pt;${ps}">&nbsp;</p>` +
+    `<p style="margin:0"><img src="https://connexion-omega.vercel.app/signature/logo-fidal-notaires.png" width="145" height="72" alt="FIDAL Notaires" style="display:block;width:145px;height:72px;border:0"></p></td>` +
+    `<td width="325" valign="top" style="width:325px;border-right:1px solid #000;padding:0 7px"><p style="margin:0;font-size:8pt;${ps}">&nbsp;</p>` +
+    `<p style="margin:0 0 4px 15px;font-size:16pt;font-family:Georgia,serif;color:#33838B">${html([p.prenom, p.nom].filter(Boolean).join(" "))}</p>` +
+    (p.fonction ? `<p style="margin:0 0 0 15px;font-size:10pt;line-height:115%;${ps}">${html(p.fonction)}</p>` : "") +
+    (p.service ? `<p style="margin:0 0 0 15px;font-size:10pt;line-height:115%;${ps}">${html(p.service)}</p>` : "") +
+    `<p style="margin:0 0 0 15px;font-size:9pt;line-height:115%;${ps}">&nbsp;</p>` +
+    (tel ? `<p style="margin:0 0 0 15px;font-size:9pt;${ps}">${html(tel)}</p>` : "") +
+    (p.courriel ? `<p style="margin:0 0 0 15px;font-size:9pt;font-family:'Segoe UI',sans-serif"><a href="mailto:${html(p.courriel)}" style="color:#0563C1;text-decoration:underline">${html(p.courriel)}</a></p>` : "") +
+    `<p style="margin:0 0 0 15px;font-size:9pt;${ps}">${adresse}</p><p style="margin:0;font-size:8pt;${ps}">&nbsp;</p></td>` +
+    `<td width="213" valign="top" style="width:213px;padding:0 7px"><p style="margin:0;font-size:9pt;${ps}">&nbsp;</p><p style="margin:0;font-size:9pt;${ps}">&nbsp;</p><p style="margin:0;font-size:9pt;${ps}">&nbsp;</p>` +
+    `<p style="margin:0"><img src="https://connexion-omega.vercel.app/signature/logo-notaires-de-france.png" width="78" height="74" alt="Notaires de France" style="display:block;width:78px;height:74px;border:0"></p></td></tr></table>` +
+    `<p style="margin:0;font-size:7pt;${ps}">&nbsp;</p><p style="margin:0;text-align:justify;font-size:8pt;font-family:'Segoe UI',sans-serif;color:#000"><b>Confidentiel&nbsp;: </b>Cet e-mail et ses pièces jointes contiennent des informations confidentielles protégées par le secret professionnel. S'il ne vous est pas destiné, nous vous remercions de le détruire immédiatement, sans le copier ni révéler ou transmettre son contenu à quiconque.</p>`;
+}
+function texteInvitation(u, lien){
+  const appel = u && u.civilite === "Madame" ? "Chère Madame," : u && u.civilite === "Monsieur" ? "Cher Monsieur," : "Madame, Monsieur,";
+  return [appel,
+    `Vous êtes invité${u && u.civilite === "Madame" ? "e" : ""} par FIDAL NOTAIRES à accéder au portail du patrimoine foncier ${deNom(clientCourant.client.nom)}.`,
+    "Pour activer votre accès, merci de cliquer sur le lien ci-dessous. Ce lien restera valable pour une durée de quarante-huit heures et il est à usage unique. Il vous permettra de paramétrer votre compte en choisissant un mot de passe et un code secret à six chiffres, pour valider votre identité avec votre téléphone.",
+    lien,
+    "Si ce lien a expiré ou ne fonctionne plus, n'hésitez pas à revenir vers nous pour que nous vous adressions un nouveau lien d'accès.",
+    "Nous restons à votre disposition pour toute demande,",
+    "Votre bien dévoué,"];
+}
+const OBJET_INVITATION = "Votre accès au portail du patrimoine foncier FIDAL Notaires";
+function dessinerInvitation(){
+  const zone = $("fu-invitation"); if(!zone || !INVIT) return;
+  const u = INVIT.u || (clientCourant.utilisateurs || []).find(x => x.courriel === String($("fu-courriel").value).toLowerCase().trim()) || null;
+  INVIT.u = u;
+  const civ = $("fu-civilite").value || (u && u.civilite) || "";
+  const uc = Object.assign({}, u || {}, { civilite: civ });
+  const gens = rattachesClient();
+  if(INVIT.exp == null && gens.length) INVIT.exp = (gens.find(g => g.role === "associé") || gens[0]).id;   // associé coché par défaut
+  const exp = gens.find(g => g.id === INVIT.exp) || null;
+  const copies = gens.filter(g => g.id !== INVIT.exp && g.courriel).map(g => g.courriel);
+  const lignes = texteInvitation(uc, INVIT.lien);
+  const corps = lignes.map((l, i) => i === 3 ? `<p><a href="${html(l)}">${html(l)}</a></p>` : `<p>${html(l)}</p>`).join("");
+  const alertes = [];
+  if(!gens.length) alertes.push("Aucun associé ni collaborateur rattaché au client : renseignez-les dans « Modifier » pour choisir l'expéditeur et les copies.");
+  if(!civ) alertes.push("Civilité non renseignée : le message s'ouvre sur « Madame, Monsieur, ». Choisissez Monsieur ou Madame ci-dessus (puis « Enregistrer » pour la garder).");
+  if(exp && exp.sans_signature) alertes.push("L'expéditeur est marqué « sans signature de courriel » dans CARNET : le message part sans signature.");
+  zone.innerHTML =
+    `<div class="tete"><strong>Message d'invitation</strong>` +
+      `<span class="exp">Expéditeur : ${gens.length ? gens.map(g => `<label><input type="radio" name="inv-exp" value="${g.id}" ${g.id === INVIT.exp ? "checked" : ""} onchange="INVIT.exp=${g.id};dessinerInvitation()"> ${html([g.prenom, g.nom].join(" "))} <span class="petit">(${g.role})</span></label>`).join("") : "<em>aucun</em>"}</span></div>` +
+    `<div class="tete"><span><strong>À :</strong> ${html(u ? u.courriel : $("fu-courriel").value)}</span><span><strong>Copie :</strong> ${copies.length ? html(copies.join(", ")) : "<em>personne</em>"}</span><span><strong>Objet :</strong> ${html(OBJET_INVITATION)}</span></div>` +
+    alertes.map(a => `<div class="alerte">${html(a)}</div>`).join("") +
+    `<div class="apercu" id="fu-apercu">${corps}${signatureHtml(exp)}</div>` +
+    `<div class="actions"><button class="btn" type="button" onclick="copierInvitation()">Copier le message</button>` +
+    `<button class="btn second" type="button" onclick="ouvrirMessagerie()">Ouvrir la messagerie (destinataire, copies et objet remplis)</button></div>`;
+}
+async function copierInvitation(){
+  const ap = $("fu-apercu"); const htmlMsg = ap.innerHTML, texte = ap.innerText;
+  try{
+    await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([htmlMsg], { type: "text/html" }), "text/plain": new Blob([texte], { type: "text/plain" }) })]);
+    message("Message copié : collez-le dans le corps du courriel.");
+  }catch(e){
+    const r = document.createRange(); r.selectNodeContents(ap); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    try{ document.execCommand("copy"); message("Message copié : collez-le dans le corps du courriel."); }catch{ message("Sélection faite : copiez avec Ctrl + C."); }
+  }
+}
+function ouvrirMessagerie(){
+  const u = INVIT.u, gens = rattachesClient();
+  const copies = gens.filter(g => g.id !== INVIT.exp && g.courriel).map(g => g.courriel);
+  const a = (u ? u.courriel : String($("fu-courriel").value).trim());
+  location.href = "mailto:" + encodeURIComponent(a) + "?subject=" + encodeURIComponent(OBJET_INVITATION) + (copies.length ? "&cc=" + encodeURIComponent(copies.join(",")) : "");
 }
 async function enregistrerUtilisateur(){
   $("erreur-utilisateur").textContent = "";
   const id = Number($("fu-id").value) || 0;
-  const p = { nom: $("fu-nom").value, prenom: $("fu-prenom").value, courriel: $("fu-courriel").value, responsable: $("fu-responsable").checked, sites_exclus: sitesExclusChoisis() };
+  const p = { civilite: $("fu-civilite").value, nom: $("fu-nom").value, prenom: $("fu-prenom").value, courriel: $("fu-courriel").value, responsable: $("fu-responsable").checked, sites_exclus: sitesExclusChoisis() };
   try{
     if(id){ await api("utilisateur_modifier", Object.assign({ id }, p)); message("Enregistré."); ouvrirClient(clientCourant.client.id); }
     else {
@@ -1163,7 +1275,7 @@ async function enregistrerUtilisateur(){
       message("Utilisateur créé.");
       const fiche = await api("client", { id: clientCourant.client.id }); clientCourant = fiche; afficherUtilisateurs(fiche);
       $("fu-btn").textContent = "Créé"; $("fu-btn").disabled = true;
-      montrerLien(r);
+      montrerLien(r, fiche.utilisateurs.find(x => x.id === r.id));
       setTimeout(() => { $("fu-btn").disabled = false; }, 1500);
     }
   }catch(e){ $("erreur-utilisateur").textContent = e.message; }
@@ -1174,8 +1286,9 @@ async function lienUtilisateur(id, objet){
   try{
     const r = await api("utilisateur_lien", { id, objet });
     basculer("form-utilisateur", true); $("fu-id").value = id;
-    const u = clientCourant.utilisateurs.find(x => x.id === id); if(u){ $("fu-nom").value = u.nom; $("fu-prenom").value = u.prenom; $("fu-courriel").value = u.courriel; $("fu-courriel").disabled = true; $("fu-responsable").checked = u.role === "responsable"; $("fu-sites").innerHTML = ""; $("fu-btn").textContent = "Enregistrer"; }
-    montrerLien(r);
+    const u = clientCourant.utilisateurs.find(x => x.id === id); if(u){ $("fu-civilite").value = u.civilite || ""; $("fu-nom").value = u.nom; $("fu-prenom").value = u.prenom; $("fu-courriel").value = u.courriel; $("fu-courriel").disabled = true; $("fu-responsable").checked = u.role === "responsable"; $("fu-sites").innerHTML = ""; $("fu-btn").textContent = "Enregistrer"; }
+    await chargerCarnet();
+    montrerLien(r, u);
     message(r.envoye ? "Lien envoyé." : "Lien prêt à copier.");
   }catch(e){ message(e.message); }
 }
