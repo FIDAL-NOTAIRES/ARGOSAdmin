@@ -1230,6 +1230,17 @@ function ouvrirFormUtilisateur(id){
   $("fu-lien").innerHTML = ""; $("erreur-utilisateur").textContent = "";
   basculer("form-utilisateur", true);
 }
+/* 05/11 soir (vocal) : message de rétablissement d'accès, même présentation que l'invitation, sans lien */
+async function montrerMessageRetablissement(id){
+  const u = (clientCourant.utilisateurs || []).find(x => x.id === id); if(!u) return;
+  basculer("form-utilisateur", true); $("fu-id").value = id;
+  $("fu-civilite").value = u.civilite || ""; $("fu-nom").value = u.nom; $("fu-prenom").value = u.prenom; $("fu-courriel").value = u.courriel; $("fu-courriel").disabled = true;
+  $("fu-responsable").checked = u.role === "responsable"; $("fu-sites").innerHTML = ""; $("fu-btn").textContent = "Enregistrer"; $("erreur-utilisateur").textContent = "";
+  await chargerCarnet();
+  $("fu-lien").innerHTML = `<div class="invitation" id="fu-invitation"></div>`;
+  INVIT = { lien: null, u, exp: null, objet: "retablissement" }; dessinerInvitation();
+  $("fu-invitation").scrollIntoView({ behavior: "smooth", block: "start" });
+}
 function sitesExclusChoisis(){ return Array.from(document.querySelectorAll(".fu-site")).filter(c => !c.checked).map(c => Number(c.value)); }
 function montrerLien(r, u){
   $("fu-lien").innerHTML = `<div class="lien-copie"><span>${r.envoye ? "Lien envoyé par courriel. Copie :" : "Courriel non configuré : remettez ce lien à la personne (valable quarante-huit heures, un seul usage) :"}</span>` +
@@ -1306,6 +1317,11 @@ function signatureHtml(p){
 function texteInvitation(u, lien, objet){
   const appel = u && u.civilite === "Madame" ? "Chère Madame," : u && u.civilite === "Monsieur" ? "Cher Monsieur," : "Madame, Monsieur,";
   /* 05/11 soir (vocal) : message des liens de réinitialisation validé phrase par phrase ; le lien reste en 4e position */
+  if(objet === "retablissement") return [appel,
+    `Suite à votre demande, votre accès au portail du patrimoine foncier ${deNom(clientCourant.client.nom)} a été rétabli. Vous pouvez de nouveau vous connecter avec vos identifiants habituels.`,
+    "Si vous rencontrez la moindre difficulté, n'hésitez pas à revenir vers nous.",
+    "Nous restons à votre disposition pour toute demande,",
+    "Votre bien dévoué,"];
   if(objet === "mdp" || objet === "code") return [appel,
     `Suite à votre demande, vous trouverez ci-dessous un lien pour réinitialiser ${objet === "code" ? "votre code secret à six chiffres" : "votre mot de passe"} d'accès au portail du patrimoine foncier ${deNom(clientCourant.client.nom)}.`,
     "Ce lien est à usage unique et restera valable pendant quarante-huit heures.",
@@ -1324,7 +1340,8 @@ function texteInvitation(u, lien, objet){
 }
 const OBJET_INVITATION = "Votre accès au portail du patrimoine foncier FIDAL Notaires";
 const OBJET_REINIT = "Réinitialisation de votre accès au portail du patrimoine foncier FIDAL Notaires";
-function objetMessage(){ return INVIT && (INVIT.objet === "mdp" || INVIT.objet === "code") ? OBJET_REINIT : OBJET_INVITATION; }
+const OBJET_RETABLISSEMENT = "Rétablissement de votre accès au portail du patrimoine foncier FIDAL Notaires";
+function objetMessage(){ return !INVIT ? OBJET_INVITATION : INVIT.objet === "retablissement" ? OBJET_RETABLISSEMENT : (INVIT.objet === "mdp" || INVIT.objet === "code") ? OBJET_REINIT : OBJET_INVITATION; }
 function dessinerInvitation(){
   const zone = $("fu-invitation"); if(!zone || !INVIT) return;
   const u = INVIT.u || (clientCourant.utilisateurs || []).find(x => x.courriel === String($("fu-courriel").value).toLowerCase().trim()) || null;
@@ -1336,13 +1353,13 @@ function dessinerInvitation(){
   const exp = gens.find(g => g.id === INVIT.exp) || null;
   const copies = gens.filter(g => g.id !== INVIT.exp && g.courriel).map(g => g.courriel);
   const lignes = texteInvitation(uc, INVIT.lien, INVIT.objet);
-  const corps = lignes.map((l, i) => i === 3 ? `<p><a href="${html(l)}">${html(l)}</a></p>` : `<p>${html(l)}</p>`).join("");
+  const corps = lignes.map(l => INVIT.lien && l === INVIT.lien ? `<p><a href="${html(l)}">${html(l)}</a></p>` : `<p>${html(l)}</p>`).join("");
   const alertes = [];
   if(!gens.length) alertes.push("Aucun associé ni collaborateur rattaché au client : renseignez-les dans « Modifier » pour choisir l'expéditeur et les copies.");
   if(!civ) alertes.push("Civilité non renseignée : le message s'ouvre sur « Madame, Monsieur, ». Choisissez Monsieur ou Madame ci-dessus (puis « Enregistrer » pour la garder).");
   if(exp && exp.sans_signature) alertes.push("L'expéditeur est marqué « sans signature de courriel » dans CARNET : le message part sans signature.");
   zone.innerHTML =
-    `<div class="tete"><strong>${INVIT.objet === "mdp" ? "Message de réinitialisation du mot de passe" : INVIT.objet === "code" ? "Message de réinitialisation du code secret" : "Message d'invitation"}</strong>` +
+    `<div class="tete"><strong>${INVIT.objet === "retablissement" ? "Message de rétablissement de l'accès" : INVIT.objet === "mdp" ? "Message de réinitialisation du mot de passe" : INVIT.objet === "code" ? "Message de réinitialisation du code secret" : "Message d'invitation"}</strong>` +
       `<span class="exp">Expéditeur : ${gens.length ? gens.map(g => `<label><input type="radio" name="inv-exp" value="${g.id}" ${g.id === INVIT.exp ? "checked" : ""} onchange="INVIT.exp=${g.id};dessinerInvitation()"> ${html([g.prenom, g.nom].join(" "))} <span class="petit">(${g.role})</span></label>`).join("") : "<em>aucun</em>"}</span></div>` +
     `<div class="tete"><span><strong>À :</strong> ${html(u ? u.courriel : $("fu-courriel").value)}</span><span><strong>Copie :</strong> ${copies.length ? html(copies.join(", ")) : "<em>personne</em>"}</span><span><strong>Objet :</strong> ${html(objetMessage())}</span></div>` +
     alertes.map(a => `<div class="alerte">${html(a)}</div>`).join("") +
@@ -1379,7 +1396,7 @@ function preparerBrouillon(){
   const eml = ["X-Unsent: 1", "To: " + INVIT.a, INVIT.copies.length ? "Cc: " + INVIT.copies.join(", ") : null,
     "Subject: =?UTF-8?B?" + base64Utf8(objetMessage()) + "?=", "MIME-Version: 1.0",
     "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", lignes64].filter(x => x !== null).join("\r\n");
-  const nom = (INVIT.objet === "activation" ? "Invitation portail - " : "Réinitialisation portail - ") + (INVIT.u ? [INVIT.u.prenom, INVIT.u.nom].join(" ") : INVIT.a) + ".eml";
+  const nom = (INVIT.objet === "activation" ? "Invitation portail - " : INVIT.objet === "retablissement" ? "Rétablissement portail - " : "Réinitialisation portail - ") + (INVIT.u ? [INVIT.u.prenom, INVIT.u.nom].join(" ") : INVIT.a) + ".eml";
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([eml], { type: "message/rfc822" })); a.download = nom.replace(/[\\/:*?"<>|]/g, "");
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   message("Brouillon téléchargé : ouvrez-le d'un double clic, Outlook l'affiche prêt à envoyer.");
@@ -1426,7 +1443,11 @@ async function suspendreUtilisateur(id, suspendre){
   let motif = "";
   if(suspendre){ motif = demanderMotif("Suspendre cet accès ? Les sessions ouvertes sont fermées."); if(motif === null) return; }
   else if(!confirm("Rétablir cet accès ?")) return;
-  try{ await api("utilisateur_suspendre", { id, suspendre, motif }); message(suspendre ? "Accès suspendu." : "Accès rétabli."); ouvrirClient(clientCourant.client.id); }
+  try{
+    await api("utilisateur_suspendre", { id, suspendre, motif }); message(suspendre ? "Accès suspendu." : "Accès rétabli.");
+    await ouvrirClient(clientCourant.client.id);
+    if(!suspendre) await montrerMessageRetablissement(id);   // 05/11 soir : message de rétablissement prêt à envoyer au client
+  }
   catch(e){ message(e.message); }
 }
 async function supprimerUtilisateur(id){
